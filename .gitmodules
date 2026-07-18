@@ -4,3 +4,6 @@
 [submodule "third_party/cloudgripper-api"]
 	path = third_party/cloudgripper-api
 	url = https://github.com/Ikemura-kei/cloudgripper-api-fork.git
+[submodule "third_party/cloudgripper-robot"]
+	path = third_party/cloudgripper-robot
+	url = https://github.com/cloudgripper/cloudgripper-robot.git
