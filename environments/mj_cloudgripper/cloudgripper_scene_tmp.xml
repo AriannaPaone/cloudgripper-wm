@@ -1,0 +1,205 @@
+<mujoco>
+  <compiler meshdir="./mesh"/>
+
+  <default>
+    <!-- STANDARD PHYSICAL GEOMS (default) -->
+    <geom contype="1" conaffinity="1" rgba="1.0 1.0 1.0 1.0" type="mesh"/>
+
+    <!-- VISUAL ONLY GEOMS Class -->
+    <default class="visual_mesh">
+      <geom contype="0" conaffinity="0" group="1"/>
+    </default>
+
+  </default>
+  
+  <contact>
+  <!-- TREE CONTACT DEFINTIONS -->
+	<!-- <exclude name="Frame_2_Railslider"                   body1="Frame"             body2="Rail_slider" />
+	<exclude name="RailSlider_2_Slider"                  body1="Rail_slider"       body2="Slider" />
+	<exclude name="Slider_2_ArmHolder"                   body1="Slider"            body2="Arm_holder"/>
+	<exclude name="ArmHolder_2_ArmLinearGear"            body1="Arm_holder"        body2="Arm_linear_gear"/>
+	<exclude name="ArmHolder_2_ServoLinear"              body1="Arm_holder"        body2="Servo_linear"/>
+	<exclude name="ArmLinearGear_2_ArmLinearPinionGear"  body1="Arm_linear_gear"   body2="Arm_linear_pinion_gear" />
+	<exclude name="ArmLinearGear_2_ArmRotationBase"      body1="Arm_linear_gear"   body2="Arm_rotation_base" />
+	<exclude name="ArmRotationBase_2_ArmGripBase"        body1="Arm_rotation_base" body2="Arm_grip_base" />
+	<exclude name="ArmRotationBase_2_ServoRotation"      body1="Arm_rotation_base" body2="Servo_rotation" />
+	<exclude name="ArmGripBase_2_ArmGripLinkBackLeft"    body1="Arm_grip_base"     body2="Arm_grip_link_back_left" />
+	<exclude name="ArmGripBase_2_ArmGripLinkBackRight"   body1="Arm_grip_base"     body2="Arm_grip_link_back_right" />
+	<exclude name="ArmGripBase_2_ArmGripLinkFrontLeft"   body1="Arm_grip_base"     body2="Arm_grip_link_front_left" />
+	<exclude name="ArmGripBase_2_ArmGripLinkFrontRight"  body1="Arm_grip_base"     body2="Arm_grip_link_front_right" />
+	<exclude name="ArmGripBase_2_ServoGripper"           body1="Arm_grip_base"     body2="Servo_gripper" />
+	<exclude name="ArmGripBase_2_SpurGear1"              body1="Arm_grip_base"     body2="SpurGear1_v1" />
+	<exclude name="ArmGripBase_2_SpurGear2"              body1="Arm_grip_base"     body2="SpurGear2_v1" />
+	<exclude name="SpurGear1_2_ArmGripFingerRight"       body1="SpurGear1_v1"      body2="Arm_grip_finger_right" />
+	<exclude name="SpurGear2_2_ArmGripFingerLeft"        body1="SpurGear2_v1"      body2="Arm_grip_finger_left" /> -->
+  
+  <!-- EXTRA CONTACTS -->
+  <!-- <exclude name="finger_gear" body1="SpurGear1_v1" body2="SpurGear2_v1" /> -->
+</contact>
+
+
+  <worldbody>
+
+    <!-- ===== -->
+    <!-- FRAME -->
+    <!-- ===== -->
+    <body name="Frame" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" >
+      <geom class="visual_mesh" type="mesh" name="Frame geom" mesh="Frame" rgba="1.0 1.0 1.0 1.0"  />
+    </body>
+    
+    <!-- ========= -->
+    <!-- ROBOT ARM -->
+    <!-- ========= -->
+
+    <!-- MOVE IN X -->
+    <body name="Rail_slider" pos="0.13620999455451965 0.01549999974668026 0.30630001425743103" quat="1.0 0.0 0.0 0.0" >
+      <geom type="mesh" name="Rail_slider geom" mesh="Rail_slider" rgba="1.0 1.0 1.0 1.0"  />
+      <joint type="slide" name="Rail_joint" pos="2.9802322387695312e-08 1.862645149230957e-09 0.0" axis="1.0 0.0 8.940696716308594e-08"  />
+      
+      <!-- MOVE IN Y -->
+      <body name="Slider" pos="-0.015256866812705994 0.12464459985494614 0.014549702405929565" quat="1.0 0.0 0.0 0.0" >
+        <geom type="mesh" name="Slider geom" mesh="Slider" rgba="1.0 1.0 1.0 1.0"  />
+        <joint type="slide" name="Slider_joint" pos="-1.2665987014770508e-07 4.023313522338867e-07 2.980232238769531e-07" axis="0.0 1.0 8.940696716308594e-08"  />
+        
+        <body name="Arm_holder" pos="-0.003224477171897888 0.00967608392238617 0.0033999085426330566" quat="0.70710688829422 0.0 0.0 0.7071066498756409" >
+          <geom type="mesh" name="Arm_holder geom" mesh="Arm_holder" rgba="1.0 1.0 1.0 1.0"  />
+      
+          <!-- MOVE IN Z -->
+          <body name="Arm_linear_gear" pos="0.010907739400863647 0.013909928500652313 -0.01373445987701416" quat="0.7071068286895752 -2.009718820940136e-14 0.7071067690849304 2.009718820940136e-14" >
+            <geom type="mesh" name="Arm_linear_gear geom" mesh="Arm_linear_gear" rgba="1.0 1.0 1.0 1.0"  />
+            <joint type="slide" name="Linear_joint" pos="2.5055319952116406e-07 -2.086162567138672e-07 -4.172325134277344e-07" axis="0.9999998807907104 5.960464477539063e-08 5.960464477539063e-08"  />
+            
+            <body name="Arm_rotation_base" pos="0.03589905425906181 0.0030449777841567993 0.0035235732793807983" quat="1.0 -1.5635841959290436e-14 3.774892576302591e-08 -3.774895773744902e-08" >
+              <geom type="mesh" name="Arm_rotation_base geom" mesh="Arm_rotation_base" rgba="1.0 1.0 1.0 1.0"  />
+      
+              <!-- Z ROTATION -->
+              <body name="Arm_grip_base" pos="0.003450013929978013 0.00012765079736709595 -4.470348358154297e-08" quat="1.0 5.9604587931971764e-08 3.5527132552840273e-15 5.960464477539063e-08" >
+                <geom type="mesh" name="Arm_grip_base geom" mesh="Arm_grip_base" rgba="1.0 1.0 1.0 1.0"  />
+                <joint type="hinge" name="Rotation_joint" pos="-0.0034499510657042265 -0.0001276358962059021 0.0" axis="-1.0 8.940696716308594e-08 -1.421084963300432e-14"  />
+      
+                <body name="Arm_grip_link_back_left" pos="0.022716965526342392 0.002619802951812744 -0.006424814462661743" quat="0.9238795042037964 3.854725605378917e-07 -4.622764890882536e-07 0.3826834559440613" >
+                  <geom type="mesh" name="Arm_grip_link_back_left geom" mesh="Arm_grip_link_back_left" rgba="1.0 1.0 1.0 1.0"  />
+                  <joint type="hinge" name=""
+                </body>
+      
+                <body name="Arm_grip_link_back_right" pos="0.022716965526342392 -0.0026199519634246826 -0.006424814462661743" quat="0.9238795638084412 -2.6155214527534554e-07 -4.56566539241976e-07 -0.3826833963394165" >
+                  <geom type="mesh" name="Arm_grip_link_back_right geom" mesh="Arm_grip_link_back_right" rgba="1.0 1.0 1.0 1.0"  />
+                </body>
+      
+                <body name="Arm_grip_link_front_left" pos="0.022716935724020004 0.002619922161102295 0.001425042748451233" quat="4.01961642637616e-07 0.9238795042037964 0.38268351554870605 -4.6162665512383683e-07" >
+                  <geom type="mesh" name="Arm_grip_link_front_left geom" mesh="Arm_grip_link_front_left" rgba="1.0 1.0 1.0 1.0"  />
+                </body>
+      
+                <body name="Arm_grip_link_front_right" pos="0.022716935724020004 -0.002619832754135132 0.001425042748451233" quat="2.989463325775432e-07 -0.9238795638084412 0.3826833963394165 5.24434824455966e-07" >
+                  <geom type="mesh" name="Arm_grip_link_front_right geom" mesh="Arm_grip_link_front_right" rgba="1.0 1.0 1.0 1.0"  />
+                </body>
+                
+                <body name="Servo_gripper" pos="0.012516970746219158 -0.006352707743644714 -0.0033443868160247803" quat="0.5000000596046448 0.5 0.4999999701976776 -0.4999999403953552" >
+                  <geom class="visual_mesh" type="mesh" name="Servo_gripper geom" mesh="Arm" rgba="1.0 1.0 1.0 1.0"  />
+                </body>
+                
+                <!-- FINGERS -->
+                
+                <body name="SpurGear1_v1" pos="0.012516970746219158 -0.006352588534355164 0.001425132155418396" quat="0.9238795638084412 -2.6155214527534554e-07 -4.56566539241976e-07 -0.3826833963394165" >
+                  <geom type="mesh" name="SpurGear1_v1 geom" mesh="SpurGear1_v1" rgba="1.0 1.0 1.0 1.0"  />
+                  <joint type="hinge" name="RightSpur_joint" pos="-2.2351741790771484e-08 -7.450580596923828e-09 1.4901161193847656e-08" axis="8.344650268554688e-07 2.2351741790771484e-07 1.0"  />
+                  
+                  <body name="Arm_grip_finger_right" pos="0.015728332102298737 -0.00017424672842025757 -8.940696716308594e-08" quat="0.8362867832183838 1.093552668862685e-06 9.506068181508454e-07 0.5482922792434692" >
+                    <geom type="mesh" name="Arm_grip_finger_right geom" mesh="Arm_grip_finger_right" rgba="1.0 1.0 1.0 1.0"  />
+                    <joint type="hinge" name="RightFinger_joint" pos="3.725290298461914e-08 -1.4901161193847656e-08 -4.470348358154297e-08" axis="-5.960464477539063e-08 2.205371856689453e-06 0.9999998807907104"  />
+                  </body>
+
+                </body>
+
+                <body name="SpurGear2_v1" pos="0.012516852468252182 0.006750121712684631 0.0014250725507736206" quat="0.9238793253898621 1.97694080581541e-15 -3.482280988009734e-07 0.3826839327812195" >
+                  <geom type="mesh" name="SpurGear2_v1 geom" mesh="SpurGear2_v1" rgba="1.0 1.0 1.0 1.0"  />
+                  <joint type="hinge" name="LeftSpur_joint" pos="3.725290298461914e-08 -5.21540641784668e-08 1.4901161193847656e-08" axis="1.043081283569336e-06 8.940696716308594e-08 1.0"  />
+                  
+                  <body name="Arm_grip_finger_left" pos="0.015484903007745743 -0.00023505091667175293 -2.9802322387695312e-08" quat="0.838670551776886 -1.1127038987979176e-06 5.88319153393968e-07 -0.5446391105651855" >
+                    <geom type="mesh" name="Arm_grip_finger_left geom" mesh="Arm_grip_finger_left" rgba="0.360169380903244 1.0 0.8727782964706421 1.0"  />
+                    <joint type="hinge" name="LeftFinger_joint" pos="-1.862645149230957e-08 -2.2351741790771484e-08 -2.9802322387695312e-08" axis="3.8743019104003906e-07 -1.4901161193847656e-06 1.0"  />
+                  </body>
+                </body>
+
+              </body>
+
+              <body name="Servo_rotation" pos="-0.011549733579158783 7.450580596923828e-08 -0.022696584463119507" quat="7.549790126404332e-08 -5.982309130477011e-22 -1.5893267146793733e-08 -1.0" >
+                <geom class="visual_mesh" type="mesh" name="Servo_rotation geom" mesh="servo_rot" rgba="1.0 1.0 1.0 1.0"  />
+              </body>
+
+            </body>
+            
+          </body>
+          
+          <body name="Servo_linear" pos="-0.0032277852296829224 0.029476061463356018 0.027632176876068115" quat="7.549790126404332e-08 2.8421716206667585e-14 -1.0 -3.249066597363348e-14" >
+            <geom class="visual_mesh" type="mesh" name="Servo_linear geom" mesh="servo_lin" rgba="1.0 1.0 1.0 1.0"  />
+          
+            <body name="Arm_linear_pinion_gear" pos="-0.016540467739105225 2.9802322387695312e-08 0.020041828975081444" quat="0.70710688829422 -5.526727689321616e-14 -0.7071066498756409 -5.526725995255721e-14" >
+              <geom class="visual_mesh" type="mesh" name="Arm_linear_pinion_gear geom" mesh="Arm_linear_pinion_gear" rgba="1.0 1.0 1.0 1.0"  />
+            </body>
+
+          </body>
+
+        </body>
+
+      </body>
+
+    </body>
+
+    <!-- ===== -->
+    <!-- FLOOR -->
+    <!-- ===== -->
+    <body name="Ground_plate" pos="0.0 0.0 0.0" quat="1.0 0.0 0.0 0.0" >
+      <geom type="mesh" name="Ground_plate geom" mesh="Ground_plate" rgba="1.0 1.0 1.0 1.0"  />
+    </body>
+  
+  </worldbody>
+  
+<contact>
+  <!-- TREE CONTACT DEFINTIONS -->
+	<exclude name="Frame_2_Railslider"                   body1="Frame"             body2="Rail_slider" />
+	<exclude name="RailSlider_2_Slider"                  body1="Rail_slider"       body2="Slider" />
+	<exclude name="Slider_2_ArmHolder"                   body1="Slider"            body2="Arm_holder"/>
+	<exclude name="ArmHolder_2_ArmLinearGear"            body1="Arm_holder"        body2="Arm_linear_gear"/>
+	<exclude name="ArmHolder_2_ServoLinear"              body1="Arm_holder"        body2="Servo_linear"/>
+	<exclude name="ArmLinearGear_2_ArmLinearPinionGear"  body1="Arm_linear_gear"   body2="Arm_linear_pinion_gear" />
+	<exclude name="ArmLinearGear_2_ArmRotationBase"      body1="Arm_linear_gear"   body2="Arm_rotation_base" />
+	<exclude name="ArmRotationBase_2_ArmGripBase"        body1="Arm_rotation_base" body2="Arm_grip_base" />
+	<exclude name="ArmRotationBase_2_ServoRotation"      body1="Arm_rotation_base" body2="Servo_rotation" />
+	<exclude name="ArmGripBase_2_ArmGripLinkBackLeft"    body1="Arm_grip_base"     body2="Arm_grip_link_back_left" />
+	<exclude name="ArmGripBase_2_ArmGripLinkBackRight"   body1="Arm_grip_base"     body2="Arm_grip_link_back_right" />
+	<exclude name="ArmGripBase_2_ArmGripLinkFrontLeft"   body1="Arm_grip_base"     body2="Arm_grip_link_front_left" />
+	<exclude name="ArmGripBase_2_ArmGripLinkFrontRight"  body1="Arm_grip_base"     body2="Arm_grip_link_front_right" />
+	<exclude name="ArmGripBase_2_ServoGripper"           body1="Arm_grip_base"     body2="Servo_gripper" />
+	<exclude name="ArmGripBase_2_SpurGear1"              body1="Arm_grip_base"     body2="SpurGear1_v1" />
+	<exclude name="ArmGripBase_2_SpurGear2"              body1="Arm_grip_base"     body2="SpurGear2_v1" />
+	<exclude name="SpurGear1_2_ArmGripFingerRight"       body1="SpurGear1_v1"      body2="Arm_grip_finger_right" />
+	<exclude name="SpurGear2_2_ArmGripFingerLeft"        body1="SpurGear2_v1"      body2="Arm_grip_finger_left" />
+  
+  <!-- EXTRA CONTACTS -->
+  <exclude name="finger_gear" body1="SpurGear1_v1" body2="SpurGear2_v1" />
+</contact>
+  
+  <asset>
+    <mesh name="Frame" file="Frame.stl"/>
+    <mesh name="Rail_slider" file="Rail_slider.stl"/>
+    <mesh name="Slider" file="Slider.stl"/>
+    <mesh name="Arm_holder" file="Arm_holder.stl"/>
+    <mesh name="Arm_linear_gear" file="Arm_linear_gear.stl"/>
+    <mesh name="Arm_linear_pinion_gear" file="Arm_linear_pinion_gear.stl"/>
+    <mesh name="Arm_rotation_base" file="Arm_rotation_base.stl"/>
+    <mesh name="Arm_grip_base" file="Arm_grip_base.stl"/>
+    <mesh name="Arm_grip_link_back_left" file="Arm_grip_link_back_left.stl"/>
+    <mesh name="Arm_grip_link_back_right" file="Arm_grip_link_back_right.stl"/>
+    <mesh name="Arm_grip_link_front_left" file="Arm_grip_link_front_left.stl"/>
+    <mesh name="Arm_grip_link_front_right" file="Arm_grip_link_front_right.stl"/>
+    <mesh name="Arm" file="Arm.stl"/>
+    <mesh name="SpurGear1_v1" file="SpurGear1_v1.stl"/>
+    <mesh name="Arm_grip_finger_right" file="Arm_grip_finger_right.stl"/>
+    <mesh name="SpurGear2_v1" file="SpurGear2_v1.stl"/>
+    <mesh name="Arm_grip_finger_left" file="Arm_grip_finger_left.stl"/>
+    <mesh name="servo_rot" file="servo_rot.stl"/>
+    <mesh name="servo_lin" file="servo_lin.stl"/>
+    <mesh name="Ground_plate" file="Ground_plate.stl"/>
+  </asset>
+</mujoco>
