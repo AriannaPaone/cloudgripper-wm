@@ -21,8 +21,8 @@ def main() -> None:
     world = swm.World(
         "cloudgripper_mujoco/Tracking-v0",
         num_envs=4,
-        image_shape=(64, 64),
-        max_episode_steps=10,
+        image_shape=(480, 480),
+        max_episode_steps=100,
     )
     world.set_policy(RandomPolicy(seed=0))
 

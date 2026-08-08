@@ -23,11 +23,11 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         "render_fps": 20,
     }
 
-    # DEFAULT CLOUDGRIPPER MUJOCO MODEL
+    # default cloudgripper mujoco model
     xml_file: str = Path(__file__).resolve().parent / "cloudgripper_scene.xml"
 
-    # INIT VALUES OF DEFAULT MODEL
-    initial_pose = np.zeros(5, dtype=np.float32)
+    # initial values of default model
+    initial_pose: np.ndarray = np.zeros(5, dtype=np.float32)
     material_colors: dict = {
         "glass_floor": np.array([1.0, 1.0, 1.0]),
         "gray_mat": np.array([0.87294, 0.95294, 0.87294]),
@@ -39,9 +39,9 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
     }
     light_intensity: float = 1.5
 
-    # IDENTIFIERS OF DEFAULT MODEL
+    # identifiers of default model
     main_camera: str = "Camera_main"
-    camera_ids: list = [main_camera, "Camera_bottom"]
+    camera_names: list = [main_camera, "Camera_bottom"]
     arm_names: list = [
         "Frame",
         "Rail_slider",
@@ -50,7 +50,7 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         "Arm_linear_gear",
         "Arm_rotation_base",
         "Arm_grip_base",
-        "SpurGear1_v1"
+        "SpurGear1_v1",
         "Arm_grip_finger_right",
         "SpurGear2_v1",
         "Arm_grip_finger_left",
@@ -67,7 +67,7 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
     ]
     cage_names: list = [
         "Frame",
-        "Ground_plate"
+        "Ground_plate",
     ]
     light_names: list = [
         "wall_right_light_upper",
@@ -117,7 +117,7 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         "Slider_joint",
         "Linear_joint",
         "Rotation_joint",
-        "RightSpur_joint", # remaining gripper joints posses equ. constraints to this one
+        "RightSpur_joint", # remaining gripper joints possess equ. constraints to this one
     ]
 
     def __init__(
@@ -149,31 +149,8 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         self._mode: str = mode
         self._max_delta:float = max_delta
         self._step_thresh: float = step_threshold
-
         self._current_pos:np.ndarray = self.initial_pose.copy()
         self._target_pos: np.ndarray = self.initial_pose.copy()
-
-        self._colors: dict = dict(
-            red=np.array([0.96, 0.26, 0.33, 1.0]),
-            orange=np.array([1.0, 0.69, 0.21, 1.0]),
-            yellow=np.array([0.76, 0.96, 0.04, 1.0]),
-            green=np.array([0.06, 0.74, 0.21, 1.0]),
-            blue=np.array([0.35, 0.55, 0.91, 1.0]),
-            purple=np.array([0.61, 0.28, 0.82, 1.0]),
-            magenta=np.array([0.82, 0.28, 0.61, 1.0]),
-            lightred=np.array([0.99, 0.85, 0.86, 1.0]),
-            lightorange=np.array([1.0, 0.94, 0.84, 1.0]),
-            lightyellow=np.array([0.95, 0.99, 0.8, 1.0]),
-            lightgreen=np.array([0.77, 0.95, 0.81, 1.0]),
-            lightblue=np.array([0.86, 0.9, 0.98, 1.0]),
-            lightpurple=np.array([0.91, 0.84, 0.96, 1.0]),
-            lightmagenta=np.array([0.96, 0.84, 0.91, 1.0]),
-            white=np.array([0.9, 0.9, 0.9, 1.0]),
-            lightgray=np.array([0.7, 0.7, 0.7, 1.0]),
-            gray=np.array([0.5, 0.5, 0.5, 1.0]),
-            darkgray=np.array([0.3, 0.3, 0.3, 1.0]),
-            black=np.array([0.1, 0.1, 0.1, 1.0]),
-        )
         
 
     def build_mjcf_model(self) -> mjcf.RootElement:
@@ -209,22 +186,51 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         
         return mjcf_model
 
+    def verify_mujoco_assets(
+            self,
+            assets_dict: dict[mujoco.mjtObj, list[str]]
+        ) -> dict[mujoco.mjtObj, list[str]]:
+        """Checks if specified assets exist in the loaded MjModel.
+        
+        Args:
+            assets_dict: contains names of assets per type
+        
+        Returns:
+            dictionary of assets missing
+        """
+        missing_assets = {}
+        
+        for obj_type, names in assets_dict.items():
+            missing = []
+            for name in names:
+                # mj_name2id returns -1 if the asset is not found
+                if mujoco.mj_name2id(self.model, obj_type, name) == -1:
+                    missing.append(name)
+            if missing:
+                missing_assets[obj_type.name] = missing
+                
+        return missing_assets
+
     def post_compilation(self) -> None:
-        # get any robot data here to store after mujoco model was compiled
+        """Verifies that all default assets are present in loaded model. 
+        
+        Use to store information after build of mujoco model.
+        """
+        expected_assets = {
+            mujoco.mjtObj.mjOBJ_BODY: (self.arm_names + self.servo_names + self.cage_names + self.light_names + self.wall_names),
+            mujoco.mjtObj.mjOBJ_JOINT: self.joint_names,
+            mujoco.mjtObj.mjOBJ_ACTUATOR: self.actuator_names,
+            mujoco.mjtObj.mjOBJ_MATERIAL: self.material_names,
+            mujoco.mjtObj.mjOBJ_LIGHT: self.lightbulb_names,
+            mujoco.mjtObj.mjOBJ_CAMERA: self.camera_names,
+        }
 
-        # TODO: assert that cameras in self._cloudgripper_cameras exists in mujoco model
-        cg_assets = (
-            self.arm_names + 
-            self.cage_names + 
-            self.servo_names + 
-            self.light_names + 
-            self.lightbulb_names +
-            self.wall_names + 
-            self.material_names + 
-            self.actuator_names +
-            self.joint_names
-        )
+        missing_assets = self.verify_mujoco_assets(expected_assets)
 
+        if missing_assets:
+            print(f"Assets missing in {self.xml_file}:")
+            for obj_type, names in missing_assets.items():
+                print(f"  - {obj_type}: {names}")
 
         # adresses of control joints
         self._active_joint_adrs = [
@@ -238,7 +244,8 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         
 
     def post_compilation_objects(self) -> None:
-        # get any object data here to store after mujoco model was compiled
+        """Use to store information of objects.
+        """
         pass
 
     def compute_observation(self) -> dict:
@@ -254,12 +261,19 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
     def observation_space(self):
         return gym.spaces.Dict(
             {
-                "state": Box(low=0.0, high=1.0, shape=(5,), dtype=np.float32),
+                "state": Box(
+                    low=0.0,
+                    high=1.0,
+                    shape=(5,),
+                    dtype=np.float32
+                ),
             }
         )
 
     @property
     def action_space(self):
+        """Actions are delta actions by default.
+        """
         return swm_spaces.Box(
             low=-self._max_delta,
             high=self._max_delta,
@@ -285,8 +299,7 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
             RightSpur_joint
 
         Args:
-            values: normalized [0, 1] target for each of self.joint_names,
-                same convention as set_control()'s action.
+            values: normalized [0, 1] target for each of self.joint_namesW.
         """
         for val, joint_id, adr in zip(values, self.joint_names, self._active_joint_adrs):
             self.data.qpos[adr] = self.unnormalize(val, self.model.joint(joint_id))
@@ -316,6 +329,13 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
 
 
     def set_control(self, action) -> None:
+        """Moves the robot given an action if step threshold is exceeded.
+
+        This control principles mirrors the real cloudgripper robot's actuation.
+
+        Args:
+            action: nd.array of action
+        """
         self._target_pos = np.clip(self._target_pos + action, 0., 1.)
         dx, dy, dz, dr, dg = np.abs(self._target_pos - self._current_pos)
 

@@ -20,10 +20,10 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
 
     def __init__(
         self,
-        ob_type="pixels",
-        multiview=False,
-        height=224,
-        width=224,
+        ob_type: str ="pixels",
+        multiview: bool =False,
+        height: int =224,
+        width: int =224,
         *args,
         **kwargs,
     ):
@@ -90,7 +90,7 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
         options: dict | None =None,
         *args,
         **kwargs,
-    ):
+    ) -> tuple[dict, dict]:
         """Resets environment to initial space. Also performs variation of scene."""
         options = options or {}
 
@@ -103,7 +103,6 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
 
         obs, info = super().reset(seed=seed, options=options, *args, **kwargs)
 
-        #TODO: ADD CASE FOR CUSTOM OPTIONS
         return obs, info
 
 
@@ -145,8 +144,7 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
             self._model.light(name).diffuse[:] = led_color * intensity
 
     def compute_reward(self):
-        success = False
-        return 1.0 if success else 0.0
+        return 0.0
 
     def get_reset_info(self) -> dict:
         info = super().get_reset_info()
@@ -162,40 +160,15 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
 
 
 if __name__ == "__main__":
-    import stable_worldmodel as swm
-    from stable_worldmodel.policy import RandomPolicy
+    env = CloudgripperMuJoCoTracking(height=600,  width=600)
+    try:
+        obs, info = env.reset(seed=0)
+        obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+        frame = env.render()
+        print(obs, reward)
+        from PIL import Image
+        img = Image.fromarray(frame)
+        img.show()
 
-    import environments.mj_cloudgripper  # noqa: F401  (triggers gymnasium registration)
-
-    world = swm.World(
-        'cloudgripper_mujoco/Tracking-v0',
-        num_envs=4,
-        image_shape=(64, 64),
-        max_episode_steps=10,
-    )
-
-    world.set_policy(RandomPolicy(seed=0))
-    world.reset(
-        seed=0,
-        options={
-        },
-    )   
-    print(world.infos['pixels'].shape)  # (4, 1, 64, 64, 3)
-    print(world.infos['state'].shape)   # (4, 1, 5)
-    print(world.envs.single_variation_space.to_str())
-    world.close()
-    # env = CloudgripperMuJoCoTracking(height=600,  width=600)
-    # try:
-    #     obs, info = env.reset(seed=0)
-    #     obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
-    #     frame = env.render()
-    #     print(obs, reward)
-    #     from PIL import Image
-    #     img = Image.fromarray(frame)
-    #     img.show()
-        
-    #     ob, _ = env.reset(options={'variation': ['all']})
-    #     img = Image.fromarray(ob)
-    #     img.show()
-    # finally:
-    #     env.close()
+    finally:
+        env.close()
