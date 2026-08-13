@@ -37,6 +37,27 @@ mkdir -p logs
 echo "== job ${SLURM_JOB_ID} on $(hostname), started $(date) =="
 nvidia-smi || true
 
+# The gpu partition runs aarch64 (GH200) while login/cpu nodes are x86_64 —
+# a single ~/.local/bin/uv and a single .venv can't serve both. Pick the
+# arch-native uv binary and a separate venv dir so this never collides with
+# the x86_64 .venv used elsewhere (e.g. data collection on cpu/login nodes).
+ARCH="$(uname -m)"
+case "${ARCH}" in
+    x86_64)
+        export PATH="${HOME}/.local/bin:${PATH}"
+        export UV_PROJECT_ENVIRONMENT=.venv
+        ;;
+    aarch64)
+        export PATH="${HOME}/.local/bin-aarch64:${PATH}"
+        export UV_PROJECT_ENVIRONMENT=.venv-aarch64
+        ;;
+    *)
+        echo "ERROR: unrecognized architecture '${ARCH}' — no uv binary/venv configured for it." >&2
+        exit 1
+        ;;
+esac
+echo "arch=${ARCH} uv=$(command -v uv) venv=${UV_PROJECT_ENVIRONMENT}"
+
 # Fail fast with a clear message rather than a confusing uv/import error deep
 # inside training, if the dataset was never copied over from wherever it was
 # collected (data collection and training don't have to run on the same
