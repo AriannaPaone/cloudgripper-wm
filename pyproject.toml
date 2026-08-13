@@ -10,11 +10,12 @@ dependencies = [
     "h5py>=3.16.0",
     "hdf5plugin>=6.0.0",
     "numpy>=2.2.6",
+    "ogbench",
     "opencv-python>=4.13.0.92",
     "pybase64>=1.4.3",
     "requests>=2.34.2",
     "scikit-learn>=1.7.2",
-    "stable-worldmodel[env,train]",
+    "stable-worldmodel[train]",
     "websocket-client>=1.0.0",
 ]
 
