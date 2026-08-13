@@ -28,9 +28,9 @@
   <actuator>
     <intvelocity name="x_actuator"             joint="Rail_joint"      ctrlrange="-0.125 0.125" kp="200" forcerange="-100 100" actrange="-0.1 0.1"/>
     <intvelocity name="y_actuator"             joint="Slider_joint"    ctrlrange="-0.125 0.125" kp="200" forcerange="-100 100" actrange="-0.08 0.08"/>
-    <intvelocity name="z_actuator"             joint="Linear_joint"    ctrlrange="-0.125 0.125" kp="200" forcerange="-100 100" actrange="0.0 0.04"/>
-    <intvelocity name="rotate_actuator"        joint="Rotation_joint"  ctrlrange="-7.166 7.166" kp="200" forcerange="-100 100" actrange="-1.5708 1.5708"/> 
-    <intvelocity name="gripper_right_actuator" joint="RightSpur_joint" ctrlrange="-7.166 7.166" kp="200" forcerange="-100 100" actrange="-0.5236 0.5236"/>
+    <intvelocity name="z_actuator"             joint="Linear_joint"    ctrlrange="-0.028 0.028" kp="200" forcerange="-100 100" actrange="0.0 0.04"/>
+    <intvelocity name="rotate_actuator"        joint="Rotation_joint"  ctrlrange="-2.209 2.209" kp="200" forcerange="-100 100" actrange="-1.5708 1.5708"/>
+    <intvelocity name="gripper_right_actuator" joint="RightSpur_joint" ctrlrange="-0.736 0.736" kp="200" forcerange="-100 100" actrange="-0.5236 0.5236"/>
   </actuator>
 
   <equality>

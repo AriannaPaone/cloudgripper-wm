@@ -228,9 +228,10 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         missing_assets = self.verify_mujoco_assets(expected_assets)
 
         if missing_assets:
-            print(f"Assets missing in {self.xml_file}:")
-            for obj_type, names in missing_assets.items():
-                print(f"  - {obj_type}: {names}")
+            err = [f"{obj_type}: {names}" for obj_type, names in missing_assets.items()]
+            raise ValueError(
+                 f"Missing assets {err} \n in file {self.xml_file}"
+                )
 
         # adresses of control joints
         self._active_joint_adrs = [

@@ -106,8 +106,9 @@ def lejepa_forward(self, batch, stage, cfg):
     return output
 
 
-@hydra.main(version_base=None, config_path='./config', config_name='lewm')
-def run(cfg):
+def train(cfg):
+    """Core LeWM training loop, shared across dataset-specific entry points
+    (e.g. lewm.py, lewm_mujoco.py) that only differ in Hydra config."""
     ts = datetime.datetime.now().strftime('%y-%m-%d-%H-%M-%S')
     suffix = ''.join(random.choices(string.ascii_lowercase, k=3))
     with open_dict(cfg):
@@ -236,6 +237,11 @@ def run(cfg):
 
     manager()
     return
+
+
+@hydra.main(version_base=None, config_path='./config', config_name='lewm')
+def run(cfg):
+    train(cfg)
 
 
 if __name__ == '__main__':

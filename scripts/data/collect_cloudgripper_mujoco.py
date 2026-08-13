@@ -4,35 +4,66 @@ Usage:
     uv run python scripts/data/collect_cloudgripper_mujoco.py
 """
 
-from pathlib import Path
-import os
+import hydra
 
 import stable_worldmodel as swm
-from stable_worldmodel.policy import RandomPolicy
+from loguru import logger as logging
+from omegaconf import DictConfig
+from hydra.utils import instantiate
+from helpers import _lance_path, _count_existing_episodes, _check_config_compatibility, _save_config
 
 import environments.mj_cloudgripper  # noqa: F401  (triggers gymnasium registration)
 
 
-def main() -> None:
+@hydra.main(version_base=None, config_path='./config', config_name='cloudgripper_mujoco')
+def run(cfg: DictConfig) -> None:
+    lance_out = _lance_path(cfg.output, cfg.output_name)
 
-    root = Path(os.environ.get('STABLEWM_HOME', Path.home() / '.stable_worldmodel'))
-    dataset_path = root / 'datasets' / 'cloudgripper_mujoco_random.lance'
+    n_existing = _count_existing_episodes(cfg.output, cfg.output_name)
+    if n_existing > 0:
+        _check_config_compatibility(cfg, cfg.output)
+    to_collect = max(0, cfg.episodes - n_existing)
+
+    if n_existing > 0:
+        logging.info(
+            f'Dataset exists: {n_existing} episodes. '
+            f'Target: {cfg.episodes}. Collecting {to_collect} more.'
+        )
+
+    if to_collect == 0:
+        logging.info('Target episode count already reached, nothing to collect.')
+        return
+
+    seed_start = cfg.seed + n_existing
+    _save_config(cfg, cfg.output, cfg.output_name)
 
     world = swm.World(
         "cloudgripper_mujoco/Tracking-v0",
-        num_envs=4,
-        image_shape=(480, 480),
-        max_episode_steps=100,
+        num_envs=cfg.num_envs,
+        image_shape=tuple(cfg.world.image_shape),
+        max_episode_steps=cfg.world.max_episode_steps,
+        max_delta=cfg.world.max_delta,
+        height=cfg.world.height,
+        width=cfg.world.width,
     )
-    world.set_policy(RandomPolicy(seed=0))
+    policy = instantiate(cfg.policy, seed=seed_start)
+    world.set_policy(policy)
 
-    world.collect(
-        path=dataset_path,
-        episodes=4,
-        seed=0
-    )
-    world.close()
+    try:
+        collected = 0
+        while collected < to_collect:
+            chunk = min(cfg.num_envs, to_collect - collected)
+            seed = seed_start + collected
+            if hasattr(policy, 'reset'):
+                policy.reset()
+            world.collect(path=lance_out, episodes=chunk, seed=seed)
+            collected += chunk
+            logging.info(
+                f'Collected {n_existing + collected}/{cfg.episodes} episodes → {lance_out}'
+            )
+    finally:
+        world.close()
     
 
 if __name__ == "__main__":
-    main()
+    run()
