@@ -44,11 +44,11 @@ nvidia-smi || true
 ARCH="$(uname -m)"
 case "${ARCH}" in
     x86_64)
-        export PATH="${HOME}/.local/bin:${PATH}"
+        UV_BIN="${HOME}/.local/bin/uv"
         export UV_PROJECT_ENVIRONMENT=.venv
         ;;
     aarch64)
-        export PATH="${HOME}/.local/bin-aarch64:${PATH}"
+        UV_BIN="${HOME}/.local/bin-aarch64/uv"
         export UV_PROJECT_ENVIRONMENT=.venv-aarch64
         ;;
     *)
@@ -56,7 +56,16 @@ case "${ARCH}" in
         exit 1
         ;;
 esac
-echo "arch=${ARCH} uv=$(command -v uv) venv=${UV_PROJECT_ENVIRONMENT}"
+# Check the exact binary explicitly rather than relying on PATH fallthrough —
+# otherwise a missing arch-specific uv silently resolves to the wrong-arch
+# one elsewhere on PATH (e.g. from .bashrc) and fails with a confusing
+# "Exec format error" deep inside the job instead of a clear message here.
+if [ ! -x "${UV_BIN}" ]; then
+    echo "ERROR: no uv binary at ${UV_BIN} for arch ${ARCH}. Install it there first." >&2
+    exit 1
+fi
+export PATH="$(dirname "${UV_BIN}"):${PATH}"
+echo "arch=${ARCH} uv=${UV_BIN} venv=${UV_PROJECT_ENVIRONMENT}"
 
 # Fail fast with a clear message rather than a confusing uv/import error deep
 # inside training, if the dataset was never copied over from wherever it was
