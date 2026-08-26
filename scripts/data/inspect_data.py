@@ -81,16 +81,30 @@ def build_frame(
     total_steps: int,
     target_state: list[float] | None = None,
 ) -> np.ndarray:
+
     # Scale top camera (64×64) to DISPLAY_H × DISPLAY_H
     top_disp = cv2.resize(top_bgr, (DISPLAY_H, DISPLAY_H), interpolation=cv2.INTER_NEAREST)
 
-    # Scale base camera to DISPLAY_H height, preserving aspect ratio
-    h, w = base_bgr.shape[:2]
-    base_w = int(w * DISPLAY_H / h)
-    base_disp = cv2.resize(base_bgr, (base_w, DISPLAY_H))
 
-    total_w = DISPLAY_H + base_w
-    cameras = np.hstack([top_disp, base_disp])
+    if base_bgr is None:
+        cameras = top_disp
+        total_w = DISPLAY_H
+    else:
+        # Scale base camera to DISPLAY_H height, preserving aspect ratio
+        h, w = base_bgr.shape[:2]
+        base_w = int(w * DISPLAY_H / h)
+        base_disp = cv2.resize(base_bgr, (base_w, DISPLAY_H))
+        cameras = np.hstack([top_disp, base_disp])
+        total_w = DISPLAY_H + base_w   
+
+    
+    # # Scale base camera to DISPLAY_H height, preserving aspect ratio
+    # h, w = base_bgr.shape[:2]
+    # base_w = int(w * DISPLAY_H / h)
+    # base_disp = cv2.resize(base_bgr, (base_w, DISPLAY_H))
+
+    # total_w = DISPLAY_H + base_w
+    # cameras = np.hstack([top_disp, base_disp])
 
     # Header bar
     header = np.zeros((30, total_w, 3), dtype=np.uint8)
@@ -103,7 +117,11 @@ def build_frame(
 
     # Camera labels
     cv2.putText(cameras, "top (64px)", (4, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 100), 1)
-    cv2.putText(cameras, "base", (DISPLAY_H + 4, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 100), 1)
+
+    if base_bgr is not None:
+        cv2.putText(cameras, "base", (DISPLAY_H + 4, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 100), 1)
+
+    #cv2.putText(cameras, "base", (DISPLAY_H + 4, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 100), 1)
 
     text_panel = make_text_panel(total_w, state, action, target_state)
     return np.vstack([header, cameras, text_panel])
@@ -116,7 +134,7 @@ def load_episode(ds: lance.LanceDataset, episode_idx: int) -> list[dict]:
     return [
         {
             "pixels":       table["pixels"][i],
-            "pixels_base":  table["pixels_base"][i],
+            **({"pixels_base": table["pixels_base"][i]} if "pixels_base" in table else {}),
             "state":        list(table["state"][i]),
             "action":       list(table["action"][i]),
             "step_idx":     table["step_idx"][i],
@@ -146,7 +164,7 @@ def play_episode(
     while True:
         row = steps[step_i]
         top  = decode_jpeg(row["pixels"])
-        base = decode_jpeg(row["pixels_base"])
+        base = decode_jpeg(row["pixels_base"]) if "pixels_base" in row else None
         frame = build_frame(
             top, base,
             row["state"], row["action"],
