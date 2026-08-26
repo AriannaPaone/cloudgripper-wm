@@ -225,6 +225,12 @@
     </body>
     <camera name="Camera_bottom" pos="0.011877432465553284 -0.01152026653289795 -0.1274629384279251" quat="0 1 1 0" fovy="90" />
     <camera name="Camera_main" pos="0.14519381523132324 -0.0004741400480270386 0.12123201787471771" quat="0.607417 0.361999 0.361999 0.607417" fovy="90" />
+  
+    <body name="cube" pos="0.05 0.0 0.0139">    
+      <freejoint name="cube_freejoint"/>
+      <geom type="box" size="0.0125 0.0125 0.0125" rgba="0.15 0.7 0.3 1" mass="0.02"/>
+    </body>
+  
   </worldbody>
   <asset>
     <mesh name="Frame" file="Frame.stl"/>

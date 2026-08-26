@@ -119,6 +119,8 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
         "Rotation_joint",
         "RightSpur_joint", # remaining gripper joints possess equ. constraints to this one
     ]
+    object_names: list = [
+        "cube"]
 
     def __init__(
         self,
@@ -247,13 +249,24 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
     def post_compilation_objects(self) -> None:
         """Use to store information of objects.
         """
-        pass
+        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "cube")
+        joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "cube_freejoint")
+        if body_id == -1 or joint_id == -1:
+            raise ValueError(
+                f"Missing object 'cube' or its joint 'cube_freejoint' in file {self.xml_file}"
+            )
+        self._object_body_id = body_id
+        self._obj_qadr = self.model.jnt_qposadr[joint_id]
 
     def compute_observation(self) -> dict:
         # images flow through render() -> AddPixelsWrapper's info["pixels"],
         # not through obs (matches the real-robot CloudGripperEnv convention,
         # and avoids rendering twice per step).
-        return {"state": self._current_pos.astype(np.float32)}
+        obj_pos = self.data.qpos[self._obj_qadr:self._obj_qadr + 3]
+        return {
+            "state": self._current_pos.astype(np.float32),
+            "object_position": obj_pos.astype(np.float32)
+        }
 
     def compute_reward(self) -> float:
         return 0.0
@@ -268,6 +281,12 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
                     shape=(5,),
                     dtype=np.float32
                 ),
+                "object_position": Box(
+                    low=-0.5,
+                    high=0.5,
+                    shape=(3,),
+                    dtype=np.float32
+                )
             }
         )
 

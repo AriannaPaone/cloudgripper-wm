@@ -12,6 +12,7 @@ from stable_worldmodel import spaces as swm_spaces
 DEFAULT_VARIATIONS = (
     'agent.start_pos',
     'agent.goal_pos',
+    'object.pos',
 )
 
 
@@ -50,6 +51,15 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
                     shape=(5,),
                     dtype=np.float64,
                     init_value=self.initial_pose,
+                )
+            }),
+            'object' : swm_spaces.Dict({
+                'pos': swm_spaces.Box(
+                    low=np.array([-0.08, -0.06]),
+                    high=np.array([0.08, 0.06]),
+                    shape=(2,),
+                    dtype=np.float64,
+                    init_value=np.array([0.05, 0.0]),
                 )
             }),
             'material': swm_spaces.Dict({
@@ -119,6 +129,13 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
         self._target_pos = self.variation_space['agent']['start_pos'].value.astype(np.float32)
         self._current_pos = self._target_pos.copy()
         self.set_active_joints(self._current_pos)
+
+        #Place the object at a sampled position
+        obj_xy = self.variation_space['object']['pos'].value.astype(np.float32)
+        adr = self._obj_qadr
+        self.data.qpos[adr : adr + 2] = obj_xy
+        self.data.qpos[adr + 2] = 0.0139
+        self.data.qpos[adr + 3 : adr + 7] = [1.0, 0.0, 0.0, 0.0]
 
         # In task mode, sample a goal and goal image
         if self._mode == "task":
