@@ -21,3 +21,8 @@ data/*.zip
 
 misc/.stable_worldmodel/
 MUJOCO_LOG.TXT
+.stable_worldmodel/
+MUJOCO_LOG.TXT
+misc/videos*/
+misc/*.mp4
+misc/episode_*/
