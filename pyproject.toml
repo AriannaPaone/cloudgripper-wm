@@ -18,6 +18,7 @@ dependencies = [
     "requests>=2.34.2",
     "scikit-learn>=1.7.2",
     "stable-worldmodel[train]",
+    "tensorboard>=2.21.0",
     "websocket-client>=1.0.0",
 ]
 
