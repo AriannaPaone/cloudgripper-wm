@@ -10,9 +10,9 @@ from stable_worldmodel import spaces as swm_spaces
 
 
 DEFAULT_VARIATIONS = (
-    'agent.start_pos',
+    #'agent.start_pos',
     'agent.goal_pos',
-    'object.pos',
+    #'object.pos',
 )
 
 
@@ -59,7 +59,7 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
                     high=np.array([0.08, 0.06]),
                     shape=(2,),
                     dtype=np.float64,
-                    init_value=np.array([0.05, 0.0]),
+                    init_value=np.array([-0.021, 0.005]),
                 )
             }),
             'material': swm_spaces.Dict({

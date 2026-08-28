@@ -230,6 +230,8 @@
       <freejoint name="cube_freejoint"/>
       <geom type="box" size="0.0125 0.0125 0.0125" rgba="0.15 0.7 0.3 1" mass="0.02"/>
     </body>
+
+    <geom name="floor_collision" type="plane" pos="0 0 0" size="0.5 0.5 0.1" rgba="0 0 0 0"/>
   
   </worldbody>
   <asset>

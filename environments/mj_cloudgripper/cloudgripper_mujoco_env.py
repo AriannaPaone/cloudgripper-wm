@@ -27,7 +27,8 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
     xml_file: str = Path(__file__).resolve().parent / "cloudgripper_scene.xml"
 
     # initial values of default model
-    initial_pose: np.ndarray = np.zeros(5, dtype=np.float32)
+    #initial_pose: np.ndarray = np.zeros(5, dtype=np.float32)
+    initial_pose: np.ndarray = np.array([0.5, 0.5, 0.5, 0.5, 0.5], dtype=np.float32)
     material_colors: dict = {
         "glass_floor": np.array([1.0, 1.0, 1.0]),
         "gray_mat": np.array([0.87294, 0.95294, 0.87294]),

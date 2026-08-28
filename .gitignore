@@ -19,4 +19,5 @@ multirun/
 data/*/
 data/*.zip
 
-misc/
+misc/.stable_worldmodel/
+MUJOCO_LOG.TXT
