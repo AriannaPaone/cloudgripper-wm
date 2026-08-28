@@ -1,0 +1,12 @@
+defaults:
+  - cloudgripper_mujoco
+  - _self_
+
+output_name: tracking_geometric
+
+policy:
+  _target_: cloudgripper_wm.policies.GeometricTrajectoryPolicy
+  shape: "circle"
+  center: [0.5, 0.5]
+  size: 0.95
+  steps_per_loop: 40

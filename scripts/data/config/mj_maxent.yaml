@@ -1,0 +1,29 @@
+defaults:
+  - _self_
+  - launcher: local
+
+hydra:
+  job:
+    chdir: false
+
+output: .stable_worldmodel/datasets/
+output_name: tracking_maxent
+
+num_envs: 2
+episodes: 50
+seed: 42
+
+policy:
+  _target_: cloudgripper_wm.policies.maxent_policy.MaxEntPolicy
+  checkpoint: /home/agi/data/stablewm/logs/MaxEnt/20260828-135012_cloudgripper_mujoco_seed_42_pre_False_envs_1_hidden_[512, 256]_goal_None/models/model_agent_0_step_100_seed_42.pt
+  num_agents: 1
+  num_envs: 2
+  hidden_sizes: [512,256] #[64, 64]
+  latent_proj_dim: 4
+
+world:
+  image_shape: [224, 224]
+  height: 224
+  width: 224
+  max_episode_steps: 300
+  max_delta: 0.05
