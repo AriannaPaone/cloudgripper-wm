@@ -47,8 +47,8 @@ class GridCoverage:
         1/total_cells regardless of its starting position.
         """
         fracs = []
-        for traj in trajectories:
-            shifted = traj - traj[0]
+        for traj in trajectories: #each traj is a (T, n_dims) array
+            shifted = traj - traj[0] #every position becomes a displacement from the starting position
             fracs.append(len(np.unique(self._to_cells(shifted))) / self.total_cells)
-        return float(np.mean(fracs))
+        return float(np.mean(fracs)) #average over all trajectories
             
