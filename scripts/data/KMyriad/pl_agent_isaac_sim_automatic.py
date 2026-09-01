@@ -198,6 +198,7 @@ def reinforce_collection_and_compute_knn(writer,epoch,env, policy,behavior_polic
 
 
     states, actions, real_traj_lengths = unpack_results((states, actions, real_traj_lengths))
+    print("  t=0 cube positions:", np.unique(states[0, 0, :, 5:7].cpu().numpy().round(4), axis=0))
 
 
     # --- temporary diagnostic ---
