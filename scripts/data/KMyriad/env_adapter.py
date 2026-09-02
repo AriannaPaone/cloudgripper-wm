@@ -30,16 +30,18 @@ class MaxEntEnvAdapter:
     """
 
     def __init__(self, num_envs, env_id="cloudgripper_mujoco/Tracking-v0",
-                 device=None, normalise_object=True, **env_kwargs):
+                 device=None, normalise_object=True, max_episode_steps = None,**env_kwargs):
         self.num_envs = num_envs
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.normalise_object = normalise_object
         self.epoch_options = None
 
         def make():
-            return gym.make(env_id, **env_kwargs)
+            return gym.make(env_id, max_episode_steps=max_episode_steps, **env_kwargs)
 
         self.venv = gym.vector.SyncVectorEnv([make for _ in range(num_envs)])
+
+        print("registered max_episode_steps:", self.venv.envs[0].spec.max_episode_steps)
 
         single = self.venv.single_observation_space
         self.num_features = (single["state"].shape[0]
