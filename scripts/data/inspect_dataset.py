@@ -20,7 +20,7 @@ def main(path):
     t = ds.to_table(columns=["episode_idx", "step_idx", "state",
                              "object_position", "action"]).to_pydict()
     ep = np.array(t["episode_idx"]) 
-    print(ep)
+    #print(ep)
     state = np.array(t["state"])
     obj = np.array(t["object_position"])
     act = np.array(t["action"])
@@ -67,6 +67,9 @@ def main(path):
     z = obj[:, 2]
     print(f"  cube z: {z.min()*1000:.1f} .. {z.max()*1000:.1f} mm "
           f"(expect ~13.9, large = lifted or flipped)")
+
+    # percentage of time spent at low z (cube on table)
+    print(f"  time at arm low z (>0.95): {(state[:, 2] > 0.95).mean():.3f}")
 
 
 if __name__ == "__main__":
