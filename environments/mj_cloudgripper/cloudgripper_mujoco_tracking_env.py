@@ -7,12 +7,12 @@ from dm_control import mjcf
 from gymnasium.spaces import Box
 from environments.mj_cloudgripper.cloudgripper_mujoco_env import CloudgripperMuJoCoEnv
 from stable_worldmodel import spaces as swm_spaces
+import os
 
+_vary = os.environ.get("CG_VARY_OBJECT", "0") == "1"
 
 DEFAULT_VARIATIONS = (
-    #'agent.start_pos',
-    'agent.goal_pos',
-    #'object.pos',
+    ('agent.goal_pos', 'object.pos') if _vary else ('agent.goal_pos',)
 )
 
 
@@ -25,6 +25,8 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
         multiview: bool =False,
         height: int =224,
         width: int =224,
+        object_pos = None, #(x,y) in meters
+        agent_start_pos = None, #5 dim vector normalized to [0,1]
         *args,
         **kwargs,
     ):
@@ -35,6 +37,12 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
         self._goal_pos: np.ndarray | None = None
         self._goal_image: np.ndarray | None = None
 
+        obj_init = (np.asarray(object_pos, dtype=np.float32) if object_pos is not None
+                    else np.array([-0.021, 0.005], dtype=np.float32))
+
+        arm_init = (np.asarray(agent_start_pos, dtype=np.float32) if agent_start_pos is not None
+                    else np.array([0.5, 0.5, 0.5, 0.5, 0.5], dtype=np.float32))
+
 
         self.variation_space = swm_spaces.Dict({
             'agent' : swm_spaces.Dict({
@@ -43,7 +51,7 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
                     high=1.0,
                     shape=(5,),
                     dtype=np.float64,
-                    init_value=self.initial_pose,
+                    init_value=arm_init,
                 ),
                 'goal_pos' : swm_spaces.Box(
                     low=0.0,
@@ -59,7 +67,7 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
                     high=np.array([0.08, 0.06]),
                     shape=(2,),
                     dtype=np.float64,
-                    init_value=np.array([-0.021, 0.005]),
+                    init_value=obj_init,
                 )
             }),
             'material': swm_spaces.Dict({
