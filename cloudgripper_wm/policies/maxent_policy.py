@@ -31,21 +31,21 @@ class MaxEntPolicy(BasePolicy):
         self.net.eval()
 
         if self.agent_id is None:
-            per = max(1, self.num_envs // self.num_agents)
+            per = max(1, self.num_envs // self.num_agents) # number of envs per head (ex 4 envs, 2 agents = 2 envs per head)
             self.head = (torch.arange(self.num_envs, device=self.device) // per
-                         ).clamp(max=self.num_agents - 1)
+                         ).clamp(max=self.num_agents - 1) # [0, 0, 1, 1] for 4 envs, 2 agents
         else:
             self.head = torch.full((self.num_envs,), self.agent_id,
-                                   dtype=torch.long, device=self.device)
+                                   dtype=torch.long, device=self.device) # if we named an agent, all envs use that head
 
     def get_action(self, infos):
         state = np.asarray(infos["state"]).reshape(self.num_envs, -1)
         obj = np.asarray(infos["object_position"]).reshape(self.num_envs, -1)
-        obj = (obj - OBJ_LOW) / (OBJ_HIGH - OBJ_LOW)
+        obj = (obj - OBJ_LOW) / (OBJ_HIGH - OBJ_LOW) # cube stored in world meters but policy trained on normalized cube coordinates
         obs = torch.as_tensor(np.concatenate([state, obj], -1),
                               dtype=torch.float32, device=self.device)
 
         with torch.no_grad():
-            actions, _, _ = self.net.sample(obs)          # [E, H, A]
-            a = actions[torch.arange(self.num_envs, device=self.device), self.head]
-        return a.cpu().numpy()
+            actions, _, _ = self.net.sample(obs)          # [E, H, A] it returns (actions, log_probs, mean_actions) with shape [E, H, A] where E = num_envs, H = num_heads, A = action_dim
+            a = actions[torch.arange(self.num_envs, device=self.device), self.head] # [E, A] select the action for each env from the corresponding head
+        return a.cpu().numpy() # swm.World wants a cpu numpy 
