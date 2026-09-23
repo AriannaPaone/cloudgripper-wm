@@ -22,6 +22,7 @@ def knn_entropy_estimation_scipy(states,state_filter,real_traj_lengths, k=500):
     Returns:
     - entropies: NumPy array of shape [batch_size] containing entropy estimates for each batch.
     """
+    print("SCIPY ESTIMATE: ")
     # Detach once and move to CPU
     states = states.detach().cpu()
 
@@ -45,19 +46,34 @@ def knn_entropy_estimation_scipy(states,state_filter,real_traj_lengths, k=500):
     # If needed, permute and reshape as per your final goal
 
     N, d = states.shape
-    entropies = 0.0
-    eps = 1e-7
-    B = np.log(k) - scipy.special.digamma(k)
-    G = scipy.special.gamma(d/2 + 1)
+
+    print(f"    [est] N={N} d={d}")
+
 
     nbrs = NearestNeighbors(n_neighbors=k+1, metric='euclidean' ,algorithm='auto')
     nbrs.fit(states)
     distances, _ = nbrs.kneighbors(states)
     distances = torch.tensor(distances, dtype=torch.float32)  # Exclude the first column (self-distance)
-    # compute volume for each particle
-    volumes = (torch.pow(distances[:, k], d) * torch.pow(torch.tensor(np.pi), d/2)) / G
-    # compute entropy
-    entropies= - (1/N) * torch.sum( torch.log(((k/N) / (volumes + eps)) + eps)) + B
+
+    entropies = 0.0
+    eps = 1e-10 #1e-7
+
+    # NEW VERSION
+    B = np.log(k) - scipy.special.digamma(k)
+    kth_distances = distances[:, k]  # Distance to the k-th nearest neighbor
+    nonzero = kth_distances > 0
+    floor = kth_distances[nonzero].min() if nonzero.any() else torch.tensor(eps)
+    dk = kth_distances.clamp_min(floor)
+    log_vol = (d * np.log(dk) + (d / 2) * np.log(np.pi) - scipy.special.gammaln(d / 2 + 1))
+    entropies = -(np.log(k / N) - log_vol.mean()) + B
+
+    # # OLD VERSION
+    # B = np.log(k) - scipy.special.digamma(k)
+    # G = scipy.special.gamma(d/2 + 1)
+    # # compute volume for each particle
+    # volumes = (torch.pow(distances[:, k], d) * torch.pow(torch.tensor(np.pi), d/2)) / G
+    # # compute entropy
+    # entropies= - (1/N) * torch.sum( torch.log(((k/N) / (volumes + eps)) + eps)) + B
 
     return entropies
 
@@ -87,7 +103,7 @@ def knn_entropy_estimation_torch(states, state_filter,real_traj_lengths, k=500, 
     states = states.permute(2, 0, 1, 3)
     num_envs, num_trajs, _, feat_dim = states.shape
 
-    # Flatten states like your original code
+    # Flatten states like original code
     # sliced_states = []
     # for env in range(num_envs):
     #     env_slices = [
@@ -106,6 +122,7 @@ def knn_entropy_estimation_torch(states, state_filter,real_traj_lengths, k=500, 
     states = states[mask]  # directly gives you [N, d]
 
     N, d = states.shape
+    print(f"    [est] N={N} d={d}")
 
     # # ---- compute pairwise distances on GPU ----
 
@@ -129,13 +146,30 @@ def knn_entropy_estimation_torch(states, state_filter,real_traj_lengths, k=500, 
     # #CHUNCHED VERSION
     #kth_distances = compute_kth_distances_chunked(states, k=k, chunk_size=8192)  # [N]
 
-    # ---- entropy calculation ----
-    B = math.log(k) - torch.digamma(torch.tensor(k, device=device))
-    G = torch.lgamma(torch.tensor(d/2 + 1.0, device=device)).exp()  # gamma(d/2+1)
-    volumes = (kth_distances ** d) * (math.pi ** (d/2)) / G
+    ## NEW VERSION: 
+    B = math.log(k) - torch.digamma(torch.tensor(float(k), device=device))
 
-    entropy = - (1.0/N) * torch.sum(torch.log((k/N) / (volumes + eps) + eps)) + B
+    nonzero = kth_distances > 0
+    floor = kth_distances[nonzero].min() if nonzero.any() else torch.tensor(eps, device=device)
+    dk = kth_distances.clamp_min(floor)
+
+    log_vol = (d * torch.log(dk)
+               + (d / 2) * math.log(math.pi)
+               - torch.lgamma(torch.tensor(d / 2 + 1.0, device=device)))
+
+    # H = -(1/N) sum log( (k/N) / V_i ) + B, with the log split to avoid underflow
+    entropy = -(math.log(k / N) - log_vol.mean()) + B
+    print(f"    [est] frac zero-dist {(~nonzero).float().mean():.3f}   "
+          f"floor {floor:.2e}   median log_vol {log_vol.median():.1f}")
     return entropy
+
+    ## OLD VERSION: entropy calculation 
+    # B = math.log(k) - torch.digamma(torch.tensor(k, device=device))
+    # G = torch.lgamma(torch.tensor(d/2 + 1.0, device=device)).exp()  # gamma(d/2+1)
+    # volumes = (kth_distances ** d) * (math.pi ** (d/2)) / G
+
+    # entropy = - (1.0/N) * torch.sum(torch.log((k/N) / (volumes + eps) + eps)) + B
+    # return entropy
 
 
 def compute_kth_distances_chunked(x, k, chunk_size=1024):
