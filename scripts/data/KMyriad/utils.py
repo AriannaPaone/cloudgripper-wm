@@ -27,14 +27,14 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def init_writer(env_name = "Swimmer-v5",seed = 0 , pretrain = False,MaxEnt=False,goal_position = None,num_envs = 1,hidden_size = 256):
+def init_writer(env_name = "Swimmer-v5",seed = 0 , pretrain = False,MaxEnt=False,goal_position = None,num_envs = 1,hidden_size = 256, state_filtering = None,randomize_object_pos = None):
 
     # = "/isaac-lab/logs_new/MaxEnt/" if MaxEnt else "/isaac-lab/logs_new/GoalBased/"
     #prefix = prefix + "no_pretrain/" if not pretrain else prefix
     base = os.environ.get("STABLEWM_HOME", os.path.expanduser("~/data"))
     prefix = os.path.join(base, "logs/MaxEnt/" if MaxEnt else "logs/GoalBased/")
 
-    out_path = prefix + time.strftime("%Y%m%d-%H%M%S") + "_" + env_name + "_seed_" + str(seed) + "_pre_" + str(pretrain)  + "_envs_" + str(num_envs) + "_hidden_" + str(hidden_size) + "_goal_" + str(goal_position) + "/"
+    out_path = prefix + time.strftime("%Y%m%d-%H%M%S") + "_" + env_name + "_seed_" + str(seed) + "_pre_" + str(pretrain)  + "_envs_" + str(num_envs) + "_hidden_" + str(hidden_size) + "_goal_" + str(goal_position) + "_state_filtering_" + str(state_filtering) + "_randomize_object_pos_" + str(randomize_object_pos) + "/"
     if not os.path.exists(out_path):
         os.makedirs(out_path, exist_ok=True)
     writer = SummaryWriter(out_path)
