@@ -19,7 +19,7 @@ policy:
   num_agents: 1
   num_envs: 2
   hidden_sizes: [512,256] #[64, 64]
-  latent_proj_dim: 4
+  latent_proj_dim: 6 #4
 
 world:
   image_shape: [224, 224]
