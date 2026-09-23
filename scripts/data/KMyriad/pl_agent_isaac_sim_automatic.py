@@ -29,8 +29,10 @@ import torch.nn.functional as F
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 float_type = torch.float64
 int_type = torch.int64
-eps = 1e-7
+eps = 1e-10 #1e-7
 
+_ONSET_LOG = []     # per-epoch Δlogp by group, for averaging afterwards
+_LIFT_LOG = []      # per-epoch number of lifted particles, for averaging afterwards
 
 def collect_particles_chunked(
     env,
@@ -135,8 +137,10 @@ def collect_particles(env, policy, num_trajectories, trajectory_length,
             # step environments (keep same type env expects; original code passed torch)
             s, _,terminated,truncated,log = env.step(a)
 
-            # optionally check termination flags returned by env.step and break if needed
+            # optionally check termination flags returned by env.step and break if needed, to discover bugs
             if terminated.any() or truncated.any():
+                print(f"    reset at t={t}: term={terminated.sum().item()} "
+                      f"trunc={truncated.sum().item()}")
                 mask = terminated | truncated
                 # Only update envs that haven't already been marked terminated
                 already_done = real_traj_lengths[traj, 0] < trajectory_length
@@ -198,22 +202,48 @@ def reinforce_collection_and_compute_knn(writer,epoch,env, policy,behavior_polic
 
 
     states, actions, real_traj_lengths = unpack_results((states, actions, real_traj_lengths))
-    print("  t=0 cube positions:", np.unique(states[0, 0, :, 5:7].cpu().numpy().round(4), axis=0))
+
+    # multi-head test 
+    print(f"  env2agent {env2agent.tolist()}   states {tuple(states.shape)}   "
+          f"actions {tuple(actions.shape)}")
+    for h in range(num_agents):
+        sel = (env2agent == h)
+        if sel.any():
+            cube = states[..., sel, 5:8] # from [num_agents, T+1, num_envs, state_dim] to [num_agents, T+1, num_envs, 3]
+            print(f"    head {h}: {int(sel.sum())} envs   "
+                  f"cube x {cube[..., 0].min():.3f}..{cube[..., 0].max():.3f}   "
+                  f"y {cube[..., 1].min():.3f}..{cube[..., 1].max():.3f}   "
+                  f"z {cube[..., 2].min():.3f}..{cube[..., 2].max():.3f}   "
+                  f"unique {len(torch.unique(cube.reshape(-1, 3), dim=0))}")
+        else:
+            print(f"    head {h}: NO ENVS  <-- num_envs < num_agents")
+    # ------------------------------------------------------------------
+
+    # temporary diagnostic: check the range of cube positions at t=0, t=1, and t= last
+    print("  t=0 :", torch.unique(states[0, 0, :, 5:8], dim=0), "If only one position, the cube is not being randomized in 1 epoch")
+    print("  t=1 :", torch.unique(states[0, 1, :, 5:8], dim=0))
+    print("  t=-1:", torch.unique(states[0, -1, :, 5:8], dim=0))
 
 
-    # --- temporary diagnostic ---
-    cube = states[..., 5:7]
-    print(f"  cube range: {cube.min().item():.4f} .. {cube.max().item():.4f}  "
-          f"unique positions: {len(torch.unique(cube.reshape(-1, 2), dim=0))} / {cube.reshape(-1,2).shape[0]}")
-    # ---
+    # temporary diagnostic: check the range of cube positions
+    cube = states[..., 5:8] # from [num_agents, T+1, num_envs, state_dim] to [num_agents, T+1, num_envs, 3]
+    flat = cube.reshape(-1, 3) # flatten to [N, 3] for min/max
+    lo = flat.min(dim=0).values # per dimention min, reducing across dim 0 mens across N, so we get a 3-d vector of min x, y, and z
+    hi = flat.max(dim=0).values # per dimention max
+    n_uniq = len(torch.unique(flat, dim=0)) # number of unique cube positions across all trajectories, timesteps, and envs
+    print(f"  cube x: {lo[0]:.4f} .. {hi[0]:.4f}   "
+          f"y: {lo[1]:.4f} .. {hi[1]:.4f}   "
+          f"z: {lo[2]:.4f} .. {hi[2]:.4f}   "
+          f"unique: {n_uniq} / {flat.shape[0]}")
 
     #torch.save(states, f'states_epoch_{epoch}_agents_{num_agents}_time_{time.time()}_trajs_{num_trajectories}.pt')
     record_actions_step(num_agents, env2agent, actions, states, epoch, writer)  
 
     start_entropy = time.time()
     with torch.no_grad():
-        entropy = knn_entropy_estimation_torch(states,state_filter,real_traj_lengths, k=k, dim_weights=dim_weights)
+        entropy = knn_entropy_estimation_torch(states,state_filter,real_traj_lengths, k=k, eps=eps, dim_weights=dim_weights)
     print("Time for entropy computation: ", time.time() - start_entropy)
+    print(f"  entropy (torch estimator)={entropy.item():.6f}")
     torch.cuda.empty_cache()
 
     # Training phase: update policy networks
@@ -249,7 +279,6 @@ def reinforce_collection_and_compute_knn(writer,epoch,env, policy,behavior_polic
             discretizer)
         writer.add_figure(f'Heatmap entropy', image_fig, epoch)
         plt.close(image_fig)
-    print("Time for policy update: ", time.time() - start_update)
 
     kl_divs = None
     if log_kl_interval is not None: 
@@ -257,7 +286,7 @@ def reinforce_collection_and_compute_knn(writer,epoch,env, policy,behavior_polic
             # Calculate kl divergence between agents
             #kl_divs = calculate_vector_kl_by_agent(states,env2agent)
             kl_divs = knn_kl_agents_subspace_scipy(
-                states.cpu().numpy()[:, :, :, :len(state_filter)],  # only first 2 dims for kl
+                states.cpu().numpy(), # only first 2 dims for kl MODIFIED TO ALL
                 env2agent.cpu().numpy(),
                 k=k,
                 subspace_dims=state_filter,
@@ -314,13 +343,115 @@ def train_step(writer, epoch, states, actions, state_filter, real_traj_lengths,
     loss = entropy_loss 
     
     loss.backward()
+
+    gn = torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0) # returns the norm before clipping
+    print(f"  grad norm {gn:.4f}") 
+    #The network outputs a log std per action dimention, fc_log_std is the final linear layer that outputs the log stds.
+    # A more negative bias pushes the output down, meaning log_std gets smaller, meaning std gets smaller, meaning less exploration.  So if the bias is collapsing to a very negative number, the policy is not exploring enough.
+    print(f"  log_std bias mean {policy.fc_log_std.bias.mean().item():+.4f}") # tests wether exploration is collapsing
+
     torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
 
     mem_info = get_model_memory(policy,optimizer)
     #print(f"Memory Info before step: {mem_info}")
 
+    # --- which actions actually moved the cube? -------------------------
+    # In this section I will check what the update did to the probability of taking certain actions in certain states
+    # If the algorithm works as I intended, it should show that actions that caused the cube to move are reinforced more than actions that did not cause the cube to move.
+
+    # states is [num_traj, T+1, num_envs, state_dim]; columns 5:7 are the cube's normalised x,y. 
+    # The displacement from t to t+1 is the consequence of the action taken at t, which is what fa[i] holds.
+    cube = states[..., 5:7]                                  # [B, T+1, E, 2]
+    disp = (cube[:, 1:] - cube[:, :-1]).abs().sum(-1)        # [B, T, E]
+    moved = disp > 1e-5          # tolerance: below this is solver jitter
+
+    # Contact onset: the cube was still over the previous interval and moves over this one. These are the actions that initiated contact
+    onset = torch.zeros_like(moved)
+    onset[:, 1:] = moved[:, 1:] & ~moved[:, :-1] #logic and between the current moved and the previous not moved.
+    # the shift is applied before flattening, so it never compares the last step of one trajectory against the first of the next
+
+    moved_flat = moved.reshape(-1)                           # matches fs / fa
+    onset_flat = onset.reshape(-1)
+
+    # --- log-probabilities before and after one update ------------------
+    fs = states[:, :-1, :, :].reshape(-1, states.shape[-1]) # [B*T*E, state_dim]
+    fa = actions.reshape(-1, actions.shape[-1]) # [B*T*E, action_dim]
+    fh = env2agent.repeat(states.shape[0] * actions.shape[1]) # [B*T*E] head index for each sample
+
+    # Sample from each group separately. A random 500 would contain almost no onsets — there are only a handful per trajectory — so the group mean would be too noisy to read.
+    n_per_group = 250
+    g = torch.Generator().manual_seed(epoch)
+
+    def _sample(mask, n):
+        pool = torch.nonzero(mask.cpu()).squeeze(-1)
+        if pool.numel() == 0:
+            return pool
+        sel = torch.randperm(pool.numel(), generator=g)[:n]
+        return pool[sel]
+
+    i_onset = _sample(onset_flat, n_per_group) # sample indices of actions that caused onset of movement
+    i_moved = _sample(moved_flat & ~onset_flat, n_per_group) # sample indices of actions that moved the cube but were not onsets
+    i_still = _sample(~moved_flat, n_per_group) # sample indices of actions that did not move the cube
+    idx = torch.cat([i for i in (i_onset, i_moved, i_still) if i.numel()])
+
+    with torch.no_grad():
+        before = policy.get_log_p_select(fs[idx], fa[idx], fh[idx]).squeeze() # get the log probability of the selected actions before the update
+
     optimizer.step()
-    print(f"Time for loss computation: ", time.time() - start_loss)
+
+    with torch.no_grad():
+        after = policy.get_log_p_select(fs[idx], fa[idx], fh[idx]).squeeze() # get the log probability of the selected actions after the update
+    delta = after - before
+
+    # --- report ----------------------------------------------------------
+    # Positive means the update made those actions more likely. 
+    # The question is whether onset actions are treated differently from the rest: if the objective can see contact, they should be reinforced more.
+    n_on = i_onset.numel()
+    n_mv = i_moved.numel()
+    parts, means = [], {}
+    cursor = 0
+    for name, count in (("onset", n_on), ("moving", n_mv),
+                        ("still", idx.numel() - n_on - n_mv)):
+        if count:
+            m = delta[cursor:cursor + count].mean().item()
+            means[name] = m
+            parts.append(f"{name} {m:+.6f} (n={count})")
+            cursor += count
+        else:
+            means[name] = float("nan")
+            parts.append(f"{name} —")
+    print("  Δlogp: " + "   ".join(parts))
+
+    _ONSET_LOG.append({"epoch": int(epoch),
+                       "n_onset": int(onset_flat.sum()),
+                       **means})
+
+    with torch.no_grad():
+        d = len(state_filter) 
+        dk = distances[:, k]
+        nonzero = dk > 0
+        floor = dk[nonzero].min() if nonzero.any() else torch.tensor(1e-6, device=dk.device)
+        log_vol = (d * torch.log(dk.clamp_min(floor))
+                + (d / 2) * math.log(math.pi)
+                - torch.lgamma(torch.tensor(d / 2 + 1.0, device=dk.device)))
+        W = torch.full_like(log_vol, k / log_vol.shape[0])     # uniform, on-policy
+        coef = torch.log(W) - log_vol + 1
+
+        m, o = moved_flat.to(coef.device), onset_flat.to(coef.device)
+        print(f"  coef: onset {coef[o].mean():.3f}  moving {coef[m & ~o].mean():.3f}  "
+            f"still {coef[~m].mean():.3f}   (lower = more reinforced)")
+
+        z0 = states[:, 0:1, :, 7]
+        lifted = ((states[..., 7] - z0).abs() > (0.005 / 0.05))[:, :-1].reshape(-1).to(coef.device)
+        if lifted.any():
+            print(f"  lifted: {lifted.sum().item()} particles  coef {coef[lifted].mean():.3f} "
+                f"vs batch mean {coef.mean():.3f}")
+
+        credit = torch.zeros_like(coef)
+        credit.index_add_(0, indices[:, :-1].reshape(-1).to(coef.device),
+                          (-coef / k).repeat_interleave(indices.shape[1] - 1))
+        print(f"  credit: onset {credit[o].mean():+.4f}  moving {credit[m & ~o].mean():+.4f}  "
+              f"still {credit[~m].mean():+.4f}   (higher = reinforced)")
 
     ## Safety Check - if the loss is nan or inf, revert to behavior policy weights and skip scheduler step
     ### add safety check to see if a new policy.sample does not give nans
@@ -346,7 +477,24 @@ def train_step(writer, epoch, states, actions, state_filter, real_traj_lengths,
     current_lr = optimizer.param_groups[0]['lr']
     record_train_step(policy,loss,entropy_loss,current_lr,entropy,epoch,writer)
 
-    print(f"Loss: {loss.item()}, Entropy: {entropy.mean().item()}")
+    #Lift diagnostic 
+    # inside train_step, after log_vol / coef are computed
+    lifted = (states[..., 7] - states[0:1, 0:1, :, 7]).abs() > (0.005/0.05)   # >5mm in normalised z
+    lifted = lifted[:, :-1].reshape(-1)
+    lifted = lifted.to(coef.device)
+    if lifted.any():
+        print(f"  lifted particles: {lifted.sum().item()}  coef {coef[lifted].mean():.2f} "
+            f"vs still {coef[~lifted].mean():.2f}  (lower coef = more reinforced)")
+
+    _LIFT_LOG.append(int(lifted.sum()))
+    print(f"  lifted: {int(lifted.sum())} this epoch, {sum(_LIFT_LOG)} total, "
+        f"last 10 epochs {sum(_LIFT_LOG[-10:])}")
+
+    z0 = states[:, 0:1, :, 7] # initial z position of the cube
+    dz_mm = (states[..., 7] - z0) * 50.0       # normalised z -> mm
+    print(f"  max cube rise this batch: {dz_mm.max().item():.1f} mm")
+
+    #print(f"Loss: {loss.item()}, Entropy: {entropy.mean().item()}")
     del distances, indices, loss
     torch.cuda.empty_cache()
     return error
@@ -1026,31 +1174,101 @@ def compute_entropy(behavioral_policy, target_policy, states, actions,
     else:
         importance_weights = compute_importance_weights(behavioral_policy, target_policy, filtered_states, actions,
                                                         num_traj,real_traj_lengths,env2agent)
-    
     #importance_weights = compute_temporal_influence_weights(behavioral_policy, target_policy, filtered_states, actions,
     #                                                       real_traj_lengths, env2agent, chunk_length=5)
     
-        d = len(states_filter)
     
     d = len(states_filter)
-    eps = 1e-6
+    #eps = 1e-10 #1e-6
     
     distances = distances.to(device, non_blocking=True)
     indices = indices.to(device, non_blocking=True)
 
-    k_tensor = torch.tensor(k, dtype=torch.float32)
-    B = torch.log(k_tensor) - torch.tensor(scipy.special.digamma(k), dtype=torch.float32)
-    G = torch.tensor(scipy.special.gamma(d / 2 + 1), dtype=torch.float32)
+    B = math.log(k) - scipy.special.digamma(k) # constant term in the k-NN entropy estimator
+    weights_sum = torch.sum(importance_weights[indices[:, :-1]], dim=1)  # sum of weights for each particle
 
-    # compute weights sum for each particle
-    weights_sum = torch.sum(importance_weights[indices[:, :-1]], dim=1)
+    # with torch.no_grad():
+    #     dk = distances[:, k]
+    #     nz = dk > 0
+    #     if nz.any():
+    #         nbrs = indices[nz][:, :-1].reshape(-1)
+    #         #indices[nz] selects the neighbor lists of the informative points (those with nonzero k-th distance)
+    #         #nbrs reshapes the neighbor indices into a 1D array, so it's n_informative * k
+    #         frac = (dk[nbrs] == 0).float().mean()
+    #         #frac looks up each neighbor's k'th distance and checks if its zero, checks if informative points are surrounded by degenerate ones (credit goes to uninformative) 
+    #         print(f"  fraction of neighbours of informative points that are degenerate: "
+    #               f"{frac:.3f}  ({nz.sum().item()} points that have nonzero kth distance)")
 
-    # compute volume for each particle
-    volumes = (torch.pow(distances[:, k], d) * torch.pow(torch.tensor(torch.pi), d/2)) / G
+    with torch.no_grad():
+        dk = distances[:, k]
+        zero = dk <= 0
+        nonzero = ~zero
+        # Duplicates have distance 0, so log(volume) is -inf. Give them the
+        # smallest distance the batch actually resolves, instead of a magic eps.
+        if nonzero.any():
+            floor = dk[nonzero].min()
+        else:
+            floor = torch.tensor(1e-6, dtype=dk.dtype, device=dk.device)
+        dk = dk.clamp_min(floor)
 
-    entropy = - torch.sum((weights_sum / k) * torch.log((weights_sum / (volumes + eps)) + eps)) + B
+        # log of the k-NN ball volume, never formed explicitly (it underflows at d=6)
+        log_vol = (d * torch.log(dk)
+                   + (d / 2) * math.log(math.pi)
+                   - torch.lgamma(torch.tensor(d / 2 + 1.0, device=dk.device)))
 
-    return entropy  # Return the entropy and the gradients for debugging purposes
+    tiny = torch.finfo(weights_sum.dtype).tiny # smallest positive number representable in the dtype
+    log_ratio = torch.log(weights_sum.clamp_min(tiny)) - log_vol      # log(W_i / V_i)
+
+    entropy = -torch.sum((weights_sum / k) * log_ratio) + B
+
+    with torch.no_grad():
+        coef = log_ratio + 1                        # the per-particle gradient weight
+        print(f"  frac zero-dist {zero.float().mean():.3f}  "
+              f"(floored at {floor:.2e}, median dist {dk.median():.2e})")
+        print(f"  coef mean {coef.mean():.4f}  std {coef.std():.4f}  "
+              f"min {coef.min():.4f}  max {coef.max():.4f}")
+        if zero.any() and nonzero.any():
+            print(f"  coef at zero {coef[zero].mean():.4f}   nonzero {coef[nonzero].mean():.4f}")
+
+    return entropy
+
+    # k_tensor = torch.tensor(k, dtype=torch.float32)
+    # B = torch.log(k_tensor) - torch.tensor(scipy.special.digamma(k), dtype=torch.float32)
+    # G = torch.tensor(scipy.special.gamma(d / 2 + 1), dtype=torch.float32)
+
+    # # compute weights sum for each particle
+    # weights_sum = torch.sum(importance_weights[indices[:, :-1]], dim=1)
+
+    # # compute volume for each particle
+    # volumes = (torch.pow(distances[:, k], d) * torch.pow(torch.tensor(torch.pi), d/2)) / G
+
+    # # DEBUGGING PRINTS I ADDED
+    # with torch.no_grad():
+    #     dk = distances[:, k]
+    #     nz = dk[dk > 0]
+    #     if nz.numel():
+    #         v_nz = volumes[dk > 0]
+    #         print(f"  nonzero dist: n={nz.numel()}  min {nz.min():.2e}  "
+    #               f"median {nz.median():.2e}  max {nz.max():.2e}")
+    #         print(f"  their volumes: median {v_nz.median():.2e}   eps={eps:.0e}")
+    #     else:
+    #         print("  no nonzero distances")
+    #     print(f"  volumes > eps: {(volumes > eps).sum().item()} / {volumes.numel()}")
+    #     print(f"  volumes > 10*eps: {(volumes > 10*eps).sum().item()} / {volumes.numel()}")
+            
+    # #  diagnostic: how much do the per-sample coefficients vary?
+    # with torch.no_grad():
+    #     coef = torch.log((weights_sum / (volumes + eps)) + eps) + 1
+    #     zero = (distances[:, k] == 0)
+    #     print(f"  coef mean {coef.mean():.4f}  std {coef.std():.4f}  "
+    #           f"min {coef.min():.4f}  max {coef.max():.4f}")
+    #     print(f"  frac zero-dist {zero.float().mean():.3f}   "
+    #           f"coef at zero {coef[zero].mean():.4f}   "
+    #           f"nonzero {coef[~zero].mean() if (~zero).any() else float('nan'):.4f}")
+              
+    # entropy = - torch.sum((weights_sum / k) * torch.log((weights_sum / (volumes + eps)) + eps)) + B
+
+    # return entropy  # Return the entropy and the gradients for debugging purposes
 
 def compute_distances_all_envs_global_knn_torch(states, states_filter, real_traj_lengths, k=500, device='cuda', dim_weights=None):
     """
