@@ -24,17 +24,19 @@ OBJ_HIGH = np.array([0.10, 0.08, 0.05], dtype=np.float32)
 class MaxEntEnvAdapter:
     """Vectorised CloudGripper env with an Isaac-shaped interface.
 
-    Observation layout (num_features = 8):
+    Observation layout (num_features = 10):
         [0:5] arm state    — x, y, z, rot, grip     (already [0, 1])
         [5:8] cube position — x, y, z               (normalised to [0, 1])
+        [8:11] cube relative position — x, y, z (cube - arm) (normalised to [-1, 1]), optional, controlled by relative_position flag
     """
 
     def __init__(self, num_envs, env_id="cloudgripper_mujoco/Tracking-v0",
-                 device=None, normalise_object=True, max_episode_steps = None,**env_kwargs):
+                 device=None, normalise_object=True, max_episode_steps = None, relative_position=False,**env_kwargs):
         self.num_envs = num_envs
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.normalise_object = normalise_object
         self.epoch_options = None
+        self.relative_position = relative_position
 
         def make():
             return gym.make(env_id, max_episode_steps=max_episode_steps, **env_kwargs)
@@ -44,8 +46,13 @@ class MaxEntEnvAdapter:
         print("registered max_episode_steps:", self.venv.envs[0].spec.max_episode_steps)
 
         single = self.venv.single_observation_space
-        self.num_features = (single["state"].shape[0]
+        if not self.relative_position:
+            self.num_features = (single["state"].shape[0]
                              + single["object_position"].shape[0])
+        else: 
+            self.num_features = (single["state"].shape[0]
+                             + single["object_position"].shape[0]
+                             + 3)  # +2 for the relative position of the cube to the arm
         self.num_actions = self.venv.single_action_space.shape[0]
         self.action_space = self.venv.single_action_space
 
@@ -58,7 +65,13 @@ class MaxEntEnvAdapter:
             obj = np.clip(obj, 0.0, 1.0)        # cube outside the workspace
                                                 # collapses to the boundary, so
                                                 # escaping it carries no entropy
-        flat = np.concatenate([state, obj], axis=-1).astype(np.float32) #joins along the feature dim. 
+
+        if self.relative_position:
+            rel = obj[:, :3] - state[:, :3] # relative position of the cube to the arm
+            flat = np.concatenate([state, obj, rel], axis=-1).astype(np.float32) #joins along the feature dim.
+        else:
+            flat = np.concatenate([state, obj], axis=-1).astype(np.float32) #joins along the feature dim.
+
         return {"policy": torch.as_tensor(flat, device=self.device)}
 
     def reset(self, seed=None, options=None):
