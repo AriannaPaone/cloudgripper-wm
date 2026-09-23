@@ -15,12 +15,15 @@ from scripts.data.KMyriad.policy_multihead import PolicyMultiheadNetwork, Discre
 from scripts.data.KMyriad import utils as t_utils
 from scripts.data.KMyriad import pl_agent_isaac_sim_automatic as pl_agent
 from scripts.data.KMyriad.env_adapter import MaxEntEnvAdapter
-from scripts.data.coverage import GridCoverage
+from scripts.data.coverage_old import GridCoverage
 from gymnasium import spaces
+
+from scripts.data.KMyriad.pl_agent_isaac_sim_automatic import _ONSET_LOG
+
 
 def train_maxent_policy(object_pos , agent_start_pos, num_agents = 1, multihead = True, num_epochs = 100, name_env=  "cloudgripper_mujoco", seed = 0, k = 5, hidden_sizes= [512,256], traj_len= 300, total_trajs = 32, num_envs=  32, 
                         env= None, chunk_size = 1, log_entropy = 40, 
-                        trunk_lr = 0.0005, head_lr = 0.0002, milestones = [80], state_filtering = [0,1,5,6], automatic_budget = False, randomize_object_pos = True):
+                        trunk_lr = 0.0005, head_lr = 0.0002, milestones = [80], state_filtering = [0,1,5,6], dim_weights = None, automatic_budget = False, randomize_object_pos = True, relative_position = False):
     """Train a MaxEnt multihead policy and save the checkpoint."""
 
     a = num_agents  # Assuming single values for simplicity since this is called for comparisons
@@ -28,18 +31,19 @@ def train_maxent_policy(object_pos , agent_start_pos, num_agents = 1, multihead 
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    arm_cov   = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [20, 20])
-    cube_cov  = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [20, 20])
-    cube_disp = GridCoverage([(-1.0, 1.0), (-1.0, 1.0)], [20, 20])
+    arm_cov   = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [40, 40])
+    cube_cov  = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [40, 40])
+    cube_disp = GridCoverage([(-1.0, 1.0), (-1.0, 1.0)], [40, 40])
 
-    env = MaxEntEnvAdapter(num_envs=num_envs, height=64, width=64, max_episode_steps=traj_len, object_pos=object_pos, agent_start_pos=agent_start_pos, device=device)
+    env = MaxEntEnvAdapter(num_envs=num_envs, height=64, width=64, max_episode_steps=traj_len, object_pos=object_pos, agent_start_pos=agent_start_pos, device=device, relative_position=relative_position)
     print("max_episode_steps:", env.venv.envs[0].spec.max_episode_steps)
     print("traj_len:", traj_len)
 
     discretizer = Discretizer([[0.0, 1.0], [0.0, 1.0]], [50, 50])
 
     writer,exp_folder = t_utils.init_writer(env_name=name_env, seed=seed,MaxEnt=True, 
-                                            num_envs=a, hidden_size=hidden_sizes
+                                            num_envs=num_envs, hidden_size=hidden_sizes, 
+                                            state_filtering=state_filtering, randomize_object_pos=randomize_object_pos,
                                             #, goal_position = tag
                                             )  # Initialize TensorBoard writer
 
@@ -101,7 +105,8 @@ def train_maxent_policy(object_pos , agent_start_pos, num_agents = 1, multihead 
                                                                                 scheduler,discretizer,num_trajectories=num_trajectories, 
                                                                                 trajectory_length=traj_len, state_filter=state_filtering, 
                                                                                 num_agents = a,num_envs=num_envs, k=k, 
-                                                                                env2agent=env2agent,chunk_length=chunk_size,log_entropy_interval=log_entropy)
+                                                                                env2agent=env2agent,chunk_length=chunk_size,log_entropy_interval=log_entropy
+                                                                                ,dim_weights=dim_weights, log_kl_interval=10)
 
         print("Time Take: ", time.time() - start)
         count += 1
@@ -177,13 +182,13 @@ def main():
 
     num_agents = [1]
     multihead = True
-    num_epochs = 100  # Number of epochs for training
+    num_epochs = 200  # Number of epochs for training
     name_env =  "cloudgripper_mujoco" #"franka_stack"     #'PointMaze_UMazeDense-v3' #'AntMaze_Large_Diverse_G-v5' #'PointMaze_Large_Diverse_G-v3' #"PointMaze_Open-v3" #"Swimmer-v5" PointMaze_Open-v3 AntMaze_UMaze-v5
     seed = [0] #[0,1,56,123,22,66,55,77,88,99]  # Seed for reproducibility
     ks = [5]
     hidden_sizes = [512,256] # 'AntMaze_Large_Diverse_G-v5'[512,512] # policy network Swimmer [128,128] # Hidden layer sizes for the policy network Swimmer [128,128] # Hidden layer sizes for Ant [512,512]
     traj_len = 300 # Trajectory len for each rollout
-    total_trajs = 32 #1000  # Total number of trajectories to collect
+    total_trajs = 100 #32 #1000  # Total number of trajectories to collect
     num_envs =  total_trajs ### should be equal to the number of trajectories becuase in one simulation we collect all the trajectories in parallel
     env = None
     chunk_size = 1
@@ -192,17 +197,19 @@ def main():
     head_lr = 0.0002 if multihead else 0.0002
     #tmp_lr = 0.0004 if multihead else 0.0005
     milestones = [60,150] if not multihead else [80]
-    state_filtering = [0,1,5,6] #list(range(3,7)) #[0, 1, 2, 7, 8, 9, 14, 15, 16,57,58,59]
-    randomize_object_pos = True
+    state_filtering = [0,1,2,5,6,7] #[0,1,5,6] #list(range(3,7)) #[0, 1, 2, 7, 8, 9, 14, 15, 16,57,58,59]
+    dim_weights = [0.01,0.01,0.01,1,1,1] #weights for the state filtering, can be set to None for equal weights. 
+    randomize_object_pos = False #True
     automatic_budget = False
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    relative_position = True # Set to True if you want to include the relative position of the cube to the arm in the observation space. This will increase the number of features by 3 (x, y, z) for each environment.
 
 
-    arm_cov   = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [20, 20])
-    cube_cov  = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [20, 20])
-    cube_disp = GridCoverage([(-1.0, 1.0), (-1.0, 1.0)], [20, 20])
+    arm_cov   = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [40, 40])
+    cube_cov  = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [40, 40])
+    cube_disp = GridCoverage([(-1.0, 1.0), (-1.0, 1.0)], [40, 40])
 
-    env = MaxEntEnvAdapter(num_envs=num_envs, height=64, width=64, max_episode_steps=traj_len, device=device)
+    env = MaxEntEnvAdapter(num_envs=num_envs, height=64, width=64, max_episode_steps=traj_len, device=device, relative_position=relative_position)
     print("max_episode_steps:", env.venv.envs[0].spec.max_episode_steps)
     print("traj_len:", traj_len)
     discretizer = Discretizer([[0.0, 1.0], [0.0, 1.0]], [50, 50])
@@ -212,7 +219,8 @@ def main():
             for k in ks:
                 t_utils.set_seed(s)  # Set the random seed for reproducibility
                 writer,exp_folder = t_utils.init_writer(env_name=name_env, seed=s,MaxEnt=True, 
-                                                        num_envs=a, hidden_size=hidden_sizes)  # Initialize TensorBoard writer
+                                                        num_envs=num_envs, hidden_size=hidden_sizes,
+                                                        state_filtering=state_filtering, randomize_object_pos=randomize_object_pos,)  # Initialize TensorBoard writer
                 
         
                 obs_dim = env.num_features
@@ -268,14 +276,15 @@ def main():
 
                     #To randomize object pos before each epoch
                     xy = pos_rng.uniform([-0.07, -0.05], [0.07, 0.05]) 
-                    if randomize_object_pos:
+                    if randomize_object_pos: # if this is set to true we randomize the object position before each epoch, otherwise we keep it fixed for all epochs
                         env.epoch_options = {"variation_values": {"object.pos": xy}}
 
                     last_kl_divs,invalide_step = pl_agent.reinforce_collection_and_compute_knn(writer,count,env, pl_policy,behavior_policy,optimizer,
                                                                                             scheduler,discretizer,num_trajectories=num_trajectories, 
                                                                                             trajectory_length=traj_len, state_filter=state_filtering, 
                                                                                             num_agents = a,num_envs=num_envs, k=k, 
-                                                                                            env2agent=env2agent,chunk_length=chunk_size,log_entropy_interval=log_entropy)
+                                                                                            env2agent=env2agent,chunk_length=chunk_size,log_entropy_interval=log_entropy,
+                                                                                            dim_weights=dim_weights, log_kl_interval=10)
 
                     #print("Policy Updated:", params_changed)
                     print("Time Take: ", time.time() - start)
@@ -305,6 +314,13 @@ def main():
                                                         
                                 else:
                                     pass
+
+                    # for key in ("onset", "moving", "still"):
+                    #     v = np.array([r[key] for r in _ONSET_LOG], dtype=float)
+                    #     v = v[np.isfinite(v)] # filter out any NaN or infinite values
+                    #     if len(v):
+                    #         print(f"  {key:7s} mean {v.mean():+.6f}  over {len(v)} epochs") #it's a mean of means
+
                     if i % 10 == 0: #every 10th epoch
                         with torch.no_grad():
                             s_ev, _, _ = pl_agent.collect_particles(
@@ -323,7 +339,7 @@ def main():
                         writer.add_scalar("Coverage/cube_absolute", c_c, count)
                         writer.add_scalar("Coverage/cube_displacement", c_rel, count)
                         print(f"  coverage: arm {a_c:.3f}  arm/env {np.mean(per_env):.3f}  "
-                              f"cube {c_c:.3f}  cube_disp {c_rel:.4f}")
+                              f"cube {c_c:.3f}  cube_disp {c_rel:.4f}")    
 
                 # Save the policy after training
                 t_utils.save_settings(exp_folder, name_env, s, num_epochs, hidden_sizes, obs_dim, act_dim, a,total_trajs)
