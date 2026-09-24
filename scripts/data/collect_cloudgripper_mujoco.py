@@ -49,20 +49,84 @@ def run(cfg: DictConfig) -> None:
     policy = instantiate(cfg.policy, seed=seed_start)
     world.set_policy(policy)
 
-    try:
-        collected = 0
-        while collected < to_collect:
-            chunk = min(cfg.num_envs, to_collect - collected)
-            seed = seed_start + collected
-            if hasattr(policy, 'reset'):
-                policy.reset()
-            world.collect(path=lance_out, episodes=chunk, seed=seed)
-            collected += chunk
-            logging.info(
-                f'Collected {n_existing + collected}/{cfg.episodes} episodes → {lance_out}'
+    # Optional MuJoCo viewer for live visualization of the environment.
+    viewer_env = None
+    viewer_opened = False
+    collected = 0
+
+    visualization_enabled = bool(cfg.get("visualization", {}).get("enabled", False))
+
+    if visualization_enabled:
+        if cfg.num_envs != 1:
+            raise ValueError(
+                "Visualization is only supported with num_envs=1."
             )
+        # EnvPool contains the wrapped environments, we want the unwrapped CloudgripperMuJoCoEnv for the viewer.
+        viewer_env = world.envs.envs[0].unwrapped
+
+    try:
+
+        if not visualization_enabled:
+            while collected < to_collect:
+                chunk = min(cfg.num_envs, to_collect - collected)
+                seed = seed_start + collected
+                if hasattr(policy, 'reset'):
+                    policy.reset()
+                world.collect(path=lance_out, episodes=chunk, seed=seed)
+                collected += chunk
+                logging.info(
+                    f'Collected {n_existing + collected}/{cfg.episodes} episodes → {lance_out}'
+                )
+        else:
+            # Teleop is 1 episode at a time
+            while collected < to_collect:
+                seed = seed_start + collected
+                logging.info(
+                    f'Starting teleop episode'
+                    f'{collected + 1}/{to_collect} (seed={seed})'
+                )
+                if hasattr(policy, 'reset'):
+                    policy.reset()
+
+                #We have to reset the MuJoCo world
+                world.reset(seed=seed)
+
+                if not viewer_opened:
+                    viewer_env.launch_passive_viewer(
+                        show_left_ui=cfg.visualization.show_left_ui,
+                        show_right_ui=cfg.visualization.show_right_ui,
+                    )
+                    viewer_opened = True
+                    logging.info('Launched MuJoCo viewer for live visualization.')
+
+                viewer_env.sync_passive_viewer()
+
+                logging.info(
+                    "Waiting for input. "
+                    "W/S=X, A/D=Y, Q/E=Z, arrows=rotation/gripper, "
+                    "SPACE=no-op, ESC=quit."
+                )
+
+                world.collect(
+                    path=lance_out, 
+                    episodes=1, 
+                    seed=None,) #seed = None is important here because we want to keep the same seed for the episode, otherwise the environment will reset with a new seed and the teleop will be lost
+                collected += 1
+                logging.info(
+                    f'Collected {n_existing + collected}/{cfg.episodes} episodes → {lance_out}'
+                )
+    except KeyboardInterrupt:
+        logging.info('Keyboard interrupt received, stopping collection.')
+    
     finally:
+        if viewer_env is not None and viewer_opened:
+            try:
+                viewer_env.close_passive_viewer()
+                logging.info('Closed MuJoCo viewer.')
+            except Exception:
+                pass
         world.close()
+        logging.info(f'Collection finished. Total episodes collected: {n_existing + collected}/{cfg.episodes} → {lance_out}')
     
 
 if __name__ == "__main__":
