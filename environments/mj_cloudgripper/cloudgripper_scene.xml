@@ -1,5 +1,19 @@
 <mujoco>
   <compiler meshdir="./mesh" balanceinertia="true" inertiafromgeom="true"/>
+  <!-- elliptic (not the default pyramidal) friction cone: the pyramidal
+       approximation underestimates available friction in oblique
+       directions, especially with condim=6 (normal + sliding + torsional
+       + rolling) contacts like the cube-finger grip — measured directly:
+       switching to elliptic alone took small-cube (10-12mm) grasp success
+       from 0/5 to 4/5 on a fixed seed set, with no other change. Grip
+       force/stiffness (kp) and raw friction magnitude were ruled out
+       first (scaling either up to 8x made no difference or made things
+       worse) — this was a solver-accuracy issue, not a force one.
+       impratio (frictional-to-normal constraint impedance ratio, default 1):
+       with elliptic cones alone a held cube still creeps down through the
+       fingers (~2.6mm/s) and drops within a 10s hold; impratio=10 cuts that
+       to ~0.14mm/s and the grasp holds (scripts/debug/test_grasp_mj.py). -->
+  <option cone="elliptic" impratio="10"/>
   <visual>
     <headlight active="1"/>
   </visual>
@@ -228,7 +242,13 @@
   
     <body name="cube" pos="0.05 0.0 0.0139">    
       <freejoint name="cube_freejoint"/>
-      <geom type="box" size="0.0125 0.0125 0.0125" rgba="0.15 0.7 0.3 1" mass="0.02"/>
+      <!-- friction = [sliding, torsional, rolling]; MuJoCo's default
+           (1, 0.005, 0.0001) lets a pinched cube spin freely. condim=6 is
+           required — the default condim=3 ignores torsional/rolling
+           friction. Contacts use the max of both geoms' values, so setting
+           it here applies to every cube-finger/cube-floor contact. -->
+      <geom type="box" size="0.0125 0.0125 0.0125" rgba="0.15 0.7 0.3 1" mass="0.02"
+            friction="1 0.05 0.01" condim="6"/>
     </body>
 
     <geom name="floor_collision" type="plane" pos="0 0 0" size="0.5 0.5 0.1" rgba="0 0 0 0"/>

@@ -348,6 +348,19 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
 
         mujoco.mj_forward(self.model, self.data)
 
+    def sync_actuators_to_joints(self) -> None:
+        """Sets each intvelocity actuator's activation (its position setpoint)
+        to its joint's current qpos.
+
+        After mj_resetData act is 0, while set_active_joints only places the
+        joints — without this the kp spring drags every joint toward act=0
+        on the first steps of an episode.
+        """
+        for j_id, a_id in zip(self.joint_names, self.actuator_names):
+            actuator = self._model.actuator(a_id)
+            joint = self._model.joint(j_id)
+            self._data.act[actuator.actadr[0]] = self._data.qpos[joint.qposadr[0]]
+
 
     def set_control(self, action) -> None:
         """Moves the robot given an action if step threshold is exceeded.
@@ -379,19 +392,17 @@ class CloudgripperMuJoCoEnv(CustomMuJoCoEnv):
             # unnormalize target joint position
             next_pos_mj = self.unnormalize(val, joint)
 
-            # unnormalized distance
-            current_pos_mj = self._data.qpos[joint.qposadr[0]]
+            # use act instead of qpos as qpos reaches act through joint kp spring
+            # results in lagging & oscillation for joints carrying substantial mass
+            # (and, for the gripper, lets act wind up to its limit while the
+            # fingers are blocked by an object -> full-force squeeze)
+            current_pos_mj = self._data.act[actuator.actadr[0]]
             error = next_pos_mj - current_pos_mj
 
-            # distance per control step
+            # clipped-proportional/deadbeat: full speed when far, converge
+            # exactly once within one control step's reach
             v_max = actuator.ctrlrange[1]
-            deadband = v_max * self._control_timestep
-
-            # can't converge closer than one control step --> hold still
-            if abs(error) <= deadband:
-                ctrl[actuator.id] = 0.0
-            else:
-                ctrl[actuator.id] = v_max if error > 0.0 else -v_max
+            ctrl[actuator.id] = np.clip(error / self._control_timestep, -v_max, v_max)
 
         self._data.ctrl[:] = ctrl
         self._current_pos = next_pos
