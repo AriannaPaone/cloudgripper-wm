@@ -10,8 +10,8 @@ import numpy as np
 
 from scripts.data.coverage import GridCoverage
 
-ARM = GridCoverage(bounds=[(0.0, 1.0), (0.0, 1.0)], bins=[20, 20])
-CUBE = GridCoverage(bounds=[(-0.1, 0.1), (-0.08, 0.08)], bins=[20, 20])
+ARM = GridCoverage(bounds=[(0.0, 1.0), (0.0, 1.0)], bins=[40, 40])
+CUBE = GridCoverage(bounds=[(-0.1, 0.1), (-0.08, 0.08)], bins=[40, 40])
 CONTACT_MM = 2.0 #Threshold of movement to consider the cube "contacted" (in mm).  The cube is 20mm wide, so this is 10% of its width.
 
 
@@ -31,13 +31,31 @@ def main(path):
           f"{len(ep) // max(len(eps), 1)} steps/episode\n")
 
     # --- contact ---
-    moved = np.array([np.abs(obj[ep == e] - obj[ep == e][0]).max() * 1000
-                      for e in eps]) #array of the maximum displacement of the cube in each episode, in mm
+#     moved = np.array([np.abs(obj[ep == e] - obj[ep == e][0]).max() * 1000
+#                       for e in eps]) #array of the maximum displacement of the cube in each episode, in mm
+#     print("cube displacement")
+#     print(f"  contact (>{CONTACT_MM}mm): {(moved > CONTACT_MM).sum()}/{len(eps)}"
+#           f"  ({(moved > CONTACT_MM).mean():.0%})")
+#     print(f"  mean {moved.mean():.1f}mm   median {np.median(moved):.1f}mm"
+#           f"   max {moved.max():.1f}mm\n")
+
+          # per-axis maximum displacement, so vertical motion is visible separately
+          
+    disp = np.array([np.abs(obj[ep == e] - obj[ep == e][0]).max(axis=0)
+                     for e in eps])          # [n_episodes, 3], mm after scaling
+    disp *= 1000
+
+    moved = disp.max(axis=1)                 # overall, as before
     print("cube displacement")
     print(f"  contact (>{CONTACT_MM}mm): {(moved > CONTACT_MM).sum()}/{len(eps)}"
           f"  ({(moved > CONTACT_MM).mean():.0%})")
     print(f"  mean {moved.mean():.1f}mm   median {np.median(moved):.1f}mm"
-          f"   max {moved.max():.1f}mm\n")
+          f"   max {moved.max():.1f}mm")
+    for i, ax in enumerate("xyz"):
+        print(f"    {ax}: mean {disp[:, i].mean():5.1f}mm   "
+              f"median {np.median(disp[:, i]):5.1f}mm   "
+              f"max {disp[:, i].max():6.1f}mm")
+    print()
 
     # --- coverage ---
     print("coverage (fraction of 400 cells)")
