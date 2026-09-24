@@ -34,12 +34,13 @@ from scripts.data.KMyriad.MaxEnt_Automatic import train_maxent_policy
 SEEDS = [0,1,1234]
 
 # Training. num_epochs=100 is where the working result came from; 10 is only useful for checking the pipeline runs end to end.
-NUM_EPOCHS = 100 #10
+NUM_EPOCHS = 200 #10
 HIDDEN = [512, 256]
-STATE_FILTER = [0, 1, 5, 6]     # arm x,y + cube x,y
+STATE_FILTER = [0,1,2,5,6,7] # [0, 1, 5, 6]     # arm x,y + cube x,y
+DIM_WEIGHTS = [0.01,0.01,0.01,1,1,1]
 TRAJ_LEN = 300
-TOTAL_TRAJS = 32                # for 1 agent, must equal NUM_ENVS: the heatmap reshape in
-NUM_ENVS = 32                   # pl_agent assumes num_trajectories*num_agents = num_envs
+TOTAL_TRAJS = 100 #32                # for 1 agent, must equal NUM_ENVS: the heatmap reshape in
+NUM_ENVS = TOTAL_TRAJS# 32                   # pl_agent assumes num_trajectories*num_agents = num_envs
 K = 5                           
 TRUNK_LR = 0.0005
 HEAD_LR = 0.0002
@@ -55,12 +56,13 @@ CONTACT_MM = 2.0                # threshold: below this is physics jitter, not c
 N_BOOT = 10_000
 Z_LIMITS = (0.0, 0.10)          # metres; below 0 it fell through the floor, above 0.1 it was launched. 
 
-OUTDIR = pathlib.Path("results/seed_experiment_fixedobjects") # where to write plots and results.json
 BOOT_RNG = np.random.default_rng(0)
 STICKY_C, MAXENT_C = "#8a8a8a", "#2f6fb0"
 
-RANDOM_OBJECT_POS = False
-NAMEDATASET = "fixedstart" if not RANDOM_OBJECT_POS else "randomstart"
+RANDOM_OBJECT_POS_TEST = True
+RANDOM_OBJECT_POS = False # if True, the object is randomly placed in the workspace at the start of each episode during training. If False, it is always in the same place.
+NAMEDATASET = "fixedstart_weighted" if not RANDOM_OBJECT_POS else "randomstart_weighted"
+OUTDIR = pathlib.Path(f"results/seed_experiment_{NAMEDATASET}") # where to write plots and results.json
 # collection
 
 def collect(output_name, seed, checkpoint=None):
@@ -81,7 +83,7 @@ def collect(output_name, seed, checkpoint=None):
         f"seed={seed}",
         f"output_name={output_name}",
     ]
-    if RANDOM_OBJECT_POS:
+    if RANDOM_OBJECT_POS_TEST:
         subprocess.run(cmd, env={**os.environ, "MUJOCO_GL": "egl", "CG_VARY_OBJECT": "1"}, check=True) #for randomstart
     else:
         subprocess.run(cmd, env={**os.environ, "MUJOCO_GL": "egl"}, check=True) #for no randomstart
@@ -291,30 +293,18 @@ def main():
         np.random.seed(seed)
         torch.manual_seed(seed)
 
-        if RANDOM_OBJECT_POS:
-            ckpt = train_maxent_policy(
-                object_pos=None, agent_start_pos=None,
-                num_agents=1, multihead=True,
-                num_epochs=NUM_EPOCHS, name_env="cloudgripper_mujoco",
-                seed=seed, k=K, hidden_sizes=HIDDEN,
-                traj_len=TRAJ_LEN, total_trajs=TOTAL_TRAJS, num_envs=NUM_ENVS,
-                env=None, chunk_size=1, log_entropy=40,
-                trunk_lr=TRUNK_LR, head_lr=HEAD_LR,
-                milestones=MILESTONES, state_filtering=STATE_FILTER,
-                automatic_budget=False,
-            ) #train_maxent_policy is a function that trains a MaxEnt policy using the specified parameters. It returns the path to the checkpoint of the trained policy.
-        else:
-            ckpt = train_maxent_policy(
-                            object_pos=None, agent_start_pos=None,
-                            num_agents=1, multihead=True,
-                            num_epochs=NUM_EPOCHS, name_env="cloudgripper_mujoco",
-                            seed=seed, k=K, hidden_sizes=HIDDEN,
-                            traj_len=TRAJ_LEN, total_trajs=TOTAL_TRAJS, num_envs=NUM_ENVS,
-                            env=None, chunk_size=1, log_entropy=40,
-                            trunk_lr=TRUNK_LR, head_lr=HEAD_LR,
-                            milestones=MILESTONES, state_filtering=STATE_FILTER,
-                            automatic_budget=False, randomize_object_pos = False,
-                        ) #train_maxent_policy is a function that trains a MaxEnt policy using the specified parameters. It returns the path to the checkpoint of the trained policy.
+        ckpt = train_maxent_policy(
+            num_agents=1, multihead=True,
+            num_epochs=NUM_EPOCHS, name_env="cloudgripper_mujoco",
+            seed=seed, k=K, hidden_sizes=HIDDEN,
+            traj_len=TRAJ_LEN, total_trajs=TOTAL_TRAJS, num_envs=NUM_ENVS,
+            env=None, chunk_size=1, log_entropy=40,
+            trunk_lr=TRUNK_LR, head_lr=HEAD_LR,
+            milestones=MILESTONES, state_filtering=STATE_FILTER,
+            automatic_budget=False,
+            randomize_object_pos = RANDOM_OBJECT_POS,
+            dim_weights=DIM_WEIGHTS,) 
+            #train_maxent_policy is a function that trains a MaxEnt policy using the specified parameters. It returns the path to the checkpoint of the trained policy.
 
         checkpoints[seed] = ckpt # store the checkpoint path for this seed in a dictionary, so we can save it later in the results.json file
         print(f"\ncheckpoint: {ckpt}")
@@ -340,6 +330,8 @@ def main():
                 "state_filter": STATE_FILTER, "traj_len": TRAJ_LEN,
                 "num_envs": NUM_ENVS, "k": K,
                 "episodes": EPISODES, "steps": STEPS,
+                "dim_weights": DIM_WEIGHTS, "random_object_pos": RANDOM_OBJECT_POS,
+                "random_object_pos_test": RANDOM_OBJECT_POS_TEST,
             },
             "results": {
                 pol: [{k: (v.tolist() if isinstance(v, np.ndarray) else v)
