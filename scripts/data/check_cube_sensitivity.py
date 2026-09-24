@@ -39,6 +39,7 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 
 import numpy as np
 import torch
+import lance
 
 from scripts.data.KMyriad.policy_multihead import PolicyMultiheadNetwork
 # Change this import to wherever MaxEntEnvAdapter lives in your repo:
@@ -49,6 +50,7 @@ STEP_THRESHOLD = 0.01    # set_control ignores smaller commands
 CUBE_REST_Z = 0.0139     # metres
 N_SAMPLES = 4000         # samples per distribution for the "executed" statistics
 STATE_FILTER = None      # set by --state-filter: which observation features the policy takes
+RELATIVE_POSITION = False # set in main, does the adapter include the cube's position relative to the arm in the policy observation?
 
 # Cube positions as fractions of the adapter's workspace (OBJ_LOW..OBJ_HIGH).
 CUBE_FRACTIONS = [
@@ -75,8 +77,8 @@ def detect_fixed_std(sd):
     Only the branch that was used receives gradients, so the other one keeps
     its initial value: log_std_constant starts at -2.0, fc_log_std.bias at 0.
     """
-    const_untouched = bool(torch.all(sd["log_std_constant"] == -2.0))
-    bias_untouched = bool(torch.all(sd["fc_log_std.bias"] == 0))
+    const_untouched = bool(torch.all(sd["log_std_constant"] == -2.0)) # if the constant log std was not updated during training, it remains at its initial value of -2.0
+    bias_untouched = bool(torch.all(sd["fc_log_std.bias"] == 0)) # if the learned log std was not updated during training, it remains at its initial value of 0
     if const_untouched and not bias_untouched:
         return False
     if bias_untouched and not const_untouched:
@@ -87,26 +89,26 @@ def detect_fixed_std(sd):
 
 def load_net(path, device, fixed_std):
     """Rebuild the network from the checkpoint's own shapes."""
-    sd = torch.load(path, map_location=device)
+    sd = torch.load(path, map_location=device) # load the checkpoint's state dict
 
-    hidden = [sd["net.0.weight"].shape[0]]
+    hidden = [sd["net.0.weight"].shape[0]] # first hidden layer size
     i = 2
-    while f"net.{i}.weight" in sd:
-        hidden.append(sd[f"net.{i}.weight"].shape[0])
-        i += 2
-    n_heads, action_dim = sd["fc_mean.bias"].shape
-    state_dim = sd["net.0.weight"].shape[1]
+    while f"net.{i}.weight" in sd: # subsequent hidden layers, every second layer is a linear layer (the odd ones are activations)
+        hidden.append(sd[f"net.{i}.weight"].shape[0]) # append the size of the next hidden layer
+        i += 2 # skip the activation layer
+    n_heads, action_dim = sd["fc_mean.bias"].shape # number of heads and action dimensions from the output layer
+    state_dim = sd["net.0.weight"].shape[1] # input dimension from the first layer's weight
 
-    if fixed_std is None:
+    if fixed_std is None: # auto-detect from the checkpoint's weights
         fixed_std = detect_fixed_std(sd)
 
     # The constructor needs an action space for its scaling buffers;
     # the real values are in the checkpoint and get loaded below.
-    scale = sd["action_scale"].cpu().numpy()
-    bias = sd["action_bias"].cpu().numpy()
-    space = SimpleNamespace(low=bias - scale, high=bias + scale, shape=(action_dim,))
+    scale = sd["action_scale"].cpu().numpy() # the scale of the action space, used to rescale the tanh output to the env's action space
+    bias = sd["action_bias"].cpu().numpy() # the bias of the action space, used to rescale the tanh output to the env's action space
+    space = SimpleNamespace(low=bias - scale, high=bias + scale, shape=(action_dim,)) # create a dummy action space with the same shape and bounds as the env's action space, used for scaling the tanh output
 
-    net = PolicyMultiheadNetwork(
+    net = PolicyMultiheadNetwork( # rebuild the network with the same architecture as the checkpoint
         hidden_sizes=hidden,
         adapter_hidden=sd["head_adapters.0.0.weight"].shape[0],
         activation=torch.nn.ReLU,
@@ -115,8 +117,8 @@ def load_net(path, device, fixed_std):
         latent_proj_dim=sd["latent_proj.weight"].shape[0],
         use_fixed_std=fixed_std,
     ).to(device)
-    net.load_state_dict(sd)
-    net.eval()
+    net.load_state_dict(sd) # load the checkpoint's weights into the network
+    net.eval() # set the network to evaluation mode, so that dropout and batchnorm are disabled
 
     print(f"hidden {hidden}   heads {n_heads}   state_dim {state_dim}   action_dim {action_dim}")
     print(f"std: {'fixed per head' if fixed_std else 'learned, state-dependent'}"
@@ -138,7 +140,9 @@ def action_names(action_dim):
 
 def make_obs(state, obj_metres, device):
     """Policy observations, built exactly as the env adapter builds them."""
-    stub = SimpleNamespace(normalise_object=True, device=device)
+    stub = SimpleNamespace(normalise_object=True, 
+                           relative_position=RELATIVE_POSITION,
+                           device=device)
     raw = {"state": np.asarray(state, dtype=np.float32),
            "object_position": np.asarray(obj_metres, dtype=np.float32)}
     obs = MaxEntEnvAdapter._to_policy_obs(stub, raw)["policy"]
@@ -175,31 +179,48 @@ def print_row(label, values, fmt="{:10.4f}"):
 # ---------------------------------------------------------------- test 1: sweep
 
 def sweep(net, head, names, device):
-    low, high = np.asarray(OBJ_LOW), np.asarray(OBJ_HIGH)
+    low, high = np.asarray(OBJ_LOW), np.asarray(OBJ_HIGH) # metres, the env's workspace bounds for the cube
     cubes = []
-    for _, (fx, fy) in CUBE_FRACTIONS:
+    for _, (fx, fy) in CUBE_FRACTIONS: # calculate the cube positions in metres from the fractions of the workspace
         xy = low[:2] + np.array([fx, fy]) * (high[:2] - low[:2])
         cubes.append([xy[0], xy[1], CUBE_REST_Z]) # metres, not fractions
 
     for arm_label, arm in ARM_STATES:
         print(f"\n  --- {arm_label}: {arm} ---")
         obs = make_obs([arm] * len(cubes), cubes, device) # builds a tensor of shape [n_cubes, state_dim] with the arm state repeated for each cube position
-        mean, std = gaussians(net, obs, head)
-        act_mean, act_std = executed(net, mean, std)
+        mean, std = gaussians(net, obs, head) # shape [n_cubes, action_dim] for mean and std, the pre-tanh Gaussian parameters for each cube position
+        act_mean, act_std = executed(net, mean, std) # shape [n_cubes, action_dim] for mean and std, the mean and std of the executed actions for each cube position
         kl_to_centre = kl(mean, std, mean[:1], std[:1]).sum(-1)   # centre is row 0
         # mean and std are [n_cubes, action_dim], mean[:1] and std[:1] are [1, action_dim], so broadcasting gives [n_cubes, action_dim] and sum(-1) gives [n_cubes], 
         # the kl is summed over the action dimensions, so we get one number per cube position
+        # it tells us how different the action distribution is from the centre position's distribution, for each cube position
+        # KL( N(mean_i, std_i) || N(mean_centre, std_centre) ), summed over the 5 action dimensions (valid because the policy is a diagonal Gaussian). One number per
+        # cube position, in nats, computed on the pre-tanh parameters. Row 0 is the centre compared with itself, hence exactly 0. Larger = the cube's position
+        # changed the action distribution more, through the mean or the std or both.
 
         print("    executed action mean")
         print("    " + f"{'cube':18s}" + "".join(f"{n:>10s}" for n in names) + f"{'KL vs centre':>14s}")
         for (label, _), row, k in zip(CUBE_FRACTIONS, act_mean, kl_to_centre):
             print("    " + f"{label:18s}" + "".join(f"{float(v):10.4f}" for v in row) + f"{float(k):14.4f}")
 
-        spread = act_mean.max(0).values - act_mean.min(0).values # per-dim spread of the executed action means, shape [action_dim]
+        # How much does moving the cube change the average command? Take each action dimension's largest executed mean across the 5 cube positions minus its
+        # smallest: the full range the cube can shift that command by. This is the signal.
+        spread = act_mean.max(0).values - act_mean.min(0).values
         print_row("spread", spread)
-        print("    " + f"{'spread > 0.01?':18s}"
-              + "".join(f"{'YES' if v > STEP_THRESHOLD else 'no':>10s}" for v in spread))
-        print_row("noise (exec std)", act_std.mean(0)) # mean of the executed action stds over the cube positions, shape [action_dim]
+
+        # How much does the command vary when the cube does NOT move? 
+        # The policy is stochastic, so at a fixed observation it still scatters by this much. Averaged
+        # over the 5 positions because it barely depends on them. This is what the signal has to be seen through.
+        print_row("noise (exec std)", act_std.mean(0))
+        # Per-dimension: how much the cube's position shifts the commanded action,
+        # relative to how much the policy scatters its own actions (its learned std,
+        # after tanh). Both parts are chosen by the network: it can raise this ratio by
+        # responding more strongly to the cube, or by exploring less.
+        # Big spread, small noise: the cube clearly shapes the command.
+        # Small spread, big noise: the shift is invisible within a single action.
+        # The policy's stochasticity dominates the effect of the cube's position.
+        print_row("signal/noise", spread / act_std.mean(0))
+
 
         signs = torch.sign(act_mean)
         flips = (signs != signs[:1]).any(0)
@@ -213,8 +234,7 @@ def sweep(net, head, names, device):
 # ---------------------------------------------------------------- test 2: shuffle
 
 def shuffle_test(net, head, names, dataset, device, n_rows=4096):
-    import lance
-    t = lance.dataset(dataset).to_table(columns=["state", "object_position"]).to_pydict()
+    t = lance.dataset(dataset).to_table(columns=["state", "object_position"]).to_pydict() # load the dataset as a table with only the state and object_position columns, then convert to a dictionary of lists
     state = np.asarray(t["state"], dtype=np.float32) # shape [n_rows, state_dim]
     obj = np.asarray(t["object_position"], dtype=np.float32) # shape [n_rows, 3]
 
@@ -235,6 +255,13 @@ def shuffle_test(net, head, names, dataset, device, n_rows=4096):
             "kl": kl(*real, *other).mean(0),                       # average KL divergence per action dimension, averaged over rows
             "dact": (real_act - other_act).abs().mean(0),          # average absolute difference in executed actions, per dim, averaged over rows
         }
+        # We use both KL and |dAct| because they measure different things: 
+        # KL is a single number that combines mean and std, while |dAct| is the actual difference in executed actions. 
+        # A policy could change its std without changing its mean, which would show up in KL but not in |dAct|.
+        # KL tells us how much the action distribution changes when the cube / arm is shuffled
+        # When the arm is shuffled, the policy should be very altered so it gives us a baseline for how much the cube matters. 
+        # If the cube shuffling gives a KL close to the arm shuffling, it means the cube is important. If it's close to zero, it means the cube is ignored.
+        # |dAct| tells us how much the actual executed actions change when the cube / arm is shuffled.
 
     print(f"\n  --- shuffle test on {len(rows)} dataset rows ---")
     print("    " + f"{'':18s}" + "".join(f"{n:>10s}" for n in names) + f"{'total':>10s}")
@@ -243,7 +270,7 @@ def shuffle_test(net, head, names, dataset, device, n_rows=4096):
     for label, r in results.items():
         print_row(f"|dAct| {label}", list(r["dact"]) + [r["dact"].sum()])
 
-    arm_kl = float(results["arm shuffled"]["kl"].sum())
+    arm_kl = float(results["arm shuffled"]["kl"].sum()) # total KL divergence when the arm is shuffled, used as a baseline to compare against the cube shuffling
     if arm_kl > 0:
         ratio = float(results["cube shuffled"]["kl"].sum()) / arm_kl
         print(f"\n    cube/arm KL ratio: {ratio:.3f}"
@@ -265,9 +292,12 @@ def main():
     ap.add_argument("--state-filter", default=None,
                     help="comma-separated feature indices the policy was trained on, "
                          "e.g. 5,6,7,8,9,10 (default: all 11 adapter features)")
+    ap.add_argument("--relative-position", choices=["auto", "true", "false"], default="auto",
+                    help="does the observation include rel = cube - arm? "
+                         "auto infers it from the checkpoint's input width")
     args = ap.parse_args()
 
-    global STATE_FILTER
+    global STATE_FILTER, RELATIVE_POSITION
     if args.state_filter:
         STATE_FILTER = [int(i) for i in args.state_filter.split(",")]
 
@@ -277,9 +307,17 @@ def main():
     net, state_dim, n_heads, action_dim = load_net(args.checkpoint, device, fixed_std)
     names = action_names(action_dim)
 
-    probe = make_obs([ARM_STATES[0][1]], [[0.0, 0.0, CUBE_REST_Z]], device)
+    if args.relative_position == "auto":
+        RELATIVE_POSITION = state_dim >= 11 # if the state_dim is 11 or more, it includes the relative position features
+        print(f"inferring relative_position={RELATIVE_POSITION} from state_dim={state_dim}")
+    else:
+        RELATIVE_POSITION = args.relative_position == "true"
+        print(f"relative_position={RELATIVE_POSITION} from command line")
+
+    probe = make_obs([ARM_STATES[0][1]], [[0.0, 0.0, CUBE_REST_Z]], device) # probe the network with an observation of the first arm state and a cube at the origin
     assert probe.shape[1] == state_dim, (
         f"observation has {probe.shape[1]} features, network expects {state_dim}. "
+        "Check --relative-position. "
         "If the policy was trained on filtered features, pass --state-filter, "
         "e.g. --state-filter 5,6,7,8,9,10")
 
