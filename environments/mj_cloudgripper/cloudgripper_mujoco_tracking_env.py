@@ -155,6 +155,8 @@ class CloudgripperMuJoCoTracking(CloudgripperMuJoCoEnv):
             self._goal_pos = None
             self._goal_image = None
 
+        self.sync_actuators_to_joints()
+
         # Vary material colors
         for name in self.material_colors.keys():
             color = self.variation_space['material']['color'][name].value

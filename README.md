@@ -91,3 +91,17 @@ Currently supported world models:
 Checkpoints are saved to `$STABLEWM_HOME/checkpoints/<model_name>/<datetime_xxx>`, where `xxx` is a randomly chosen three-letter suffix for uniqueness. The same name appears as the run name on the WandB dashboard.
 
 ## 5. Evaluating World Models
+
+## 6. Debugging
+
+**Sim grasp check** — `scripts/debug/test_grasp_mj.py` runs scripted pick-and-lift trials on the MuJoCo cube (`cloudgripper_mujoco/Tracking-v0`) and reports lift/slip/spin per trial:
+
+```bash
+# both grasp orientations, one video per trial
+MUJOCO_GL=egl uv run python scripts/debug/test_grasp_mj.py --grasp-yaw 0 90 --video-dir videos/grasp
+
+# live MuJoCo viewer (starts on Camera_main)
+uv run python scripts/debug/test_grasp_mj.py --viewer --trials 3
+```
+
+Add `--baseline` to compare against the friction settings from before the fix.
