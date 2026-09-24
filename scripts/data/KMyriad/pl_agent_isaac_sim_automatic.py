@@ -420,7 +420,7 @@ def train_step(writer, epoch, states, actions, state_filter, real_traj_lengths,
         else:
             means[name] = float("nan")
             parts.append(f"{name} —")
-    print("  Δlogp: " + "   ".join(parts))
+    #print("  Δlogp: " + "   ".join(parts))
 
     _ONSET_LOG.append({"epoch": int(epoch),
                        "n_onset": int(onset_flat.sum()),
@@ -428,14 +428,15 @@ def train_step(writer, epoch, states, actions, state_filter, real_traj_lengths,
 
     with torch.no_grad():
         d = len(state_filter) 
-        dk = distances[:, k]
-        nonzero = dk > 0
+        dk = distances[:, k] # distance to the k-th nearest neighbor for each sample
+        nonzero = dk > 0 # mask for non-zero distances
         floor = dk[nonzero].min() if nonzero.any() else torch.tensor(1e-6, device=dk.device)
         log_vol = (d * torch.log(dk.clamp_min(floor))
                 + (d / 2) * math.log(math.pi)
                 - torch.lgamma(torch.tensor(d / 2 + 1.0, device=dk.device)))
         W = torch.full_like(log_vol, k / log_vol.shape[0])     # uniform, on-policy
         coef = torch.log(W) - log_vol + 1
+        # Coef is a per state quantity, it's a local log density estimate. High = crowded.
 
         m, o = moved_flat.to(coef.device), onset_flat.to(coef.device)
         print(f"  coef: onset {coef[o].mean():.3f}  moving {coef[m & ~o].mean():.3f}  "
@@ -448,8 +449,10 @@ def train_step(writer, epoch, states, actions, state_filter, real_traj_lengths,
                 f"vs batch mean {coef.mean():.3f}")
 
         credit = torch.zeros_like(coef)
-        credit.index_add_(0, indices[:, :-1].reshape(-1).to(coef.device),
-                          (-coef / k).repeat_interleave(indices.shape[1] - 1))
+        credit.index_add_(0, 
+                          indices[:, :-1].reshape(-1).to(coef.device), # indices is (num_samples, k+1), we drop the last column which is the point itself, so we only sum over neighbors
+                          (-coef / k).repeat_interleave(indices.shape[1] - 1)) # repeats each particle's contribution for each of its k neighbors
+        #The final sum is the advantage of every particle that has this action as a neighbor. 
         print(f"  credit: onset {credit[o].mean():+.4f}  moving {credit[m & ~o].mean():+.4f}  "
               f"still {credit[~m].mean():+.4f}   (higher = reinforced)")
 

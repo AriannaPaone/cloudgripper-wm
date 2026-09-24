@@ -21,9 +21,9 @@ from gymnasium import spaces
 from scripts.data.KMyriad.pl_agent_isaac_sim_automatic import _ONSET_LOG
 
 
-def train_maxent_policy(object_pos , agent_start_pos, num_agents = 1, multihead = True, num_epochs = 100, name_env=  "cloudgripper_mujoco", seed = 0, k = 5, hidden_sizes= [512,256], traj_len= 300, total_trajs = 32, num_envs=  32, 
+def train_maxent_policy(num_agents = 1, multihead = True, num_epochs = 100, name_env=  "cloudgripper_mujoco", seed = 0, k = 5, hidden_sizes= [512,256], traj_len= 300, total_trajs = 100, num_envs=  100, 
                         env= None, chunk_size = 1, log_entropy = 40, 
-                        trunk_lr = 0.0005, head_lr = 0.0002, milestones = [80], state_filtering = [0,1,5,6], dim_weights = None, automatic_budget = False, randomize_object_pos = True, relative_position = False):
+                        trunk_lr = 0.0005, head_lr = 0.0002, milestones = [80], state_filtering = [0,1,2,5,6,7], dim_weights = [0.01,0.01,0.01,1,1,1], automatic_budget = False, randomize_object_pos = False, relative_position = True):
     """Train a MaxEnt multihead policy and save the checkpoint."""
 
     a = num_agents  # Assuming single values for simplicity since this is called for comparisons
@@ -35,7 +35,7 @@ def train_maxent_policy(object_pos , agent_start_pos, num_agents = 1, multihead 
     cube_cov  = GridCoverage([(0.0, 1.0), (0.0, 1.0)], [40, 40])
     cube_disp = GridCoverage([(-1.0, 1.0), (-1.0, 1.0)], [40, 40])
 
-    env = MaxEntEnvAdapter(num_envs=num_envs, height=64, width=64, max_episode_steps=traj_len, object_pos=object_pos, agent_start_pos=agent_start_pos, device=device, relative_position=relative_position)
+    env = MaxEntEnvAdapter(num_envs=num_envs, height=64, width=64, max_episode_steps=traj_len, device=device, relative_position=relative_position)
     print("max_episode_steps:", env.venv.envs[0].spec.max_episode_steps)
     print("traj_len:", traj_len)
 
