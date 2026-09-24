@@ -60,10 +60,10 @@ def load(path):
     heads = []      # which policy head collected each episode
     bad_eps = []    # episodes whose steps are not exactly 0, 1, 2, ...
     for e in episode_ids:
-        rows = np.flatnonzero(ep == e)
-        rows = rows[np.argsort(step[rows])]
-        episodes.append(obj[rows])
-        heads.append(int(head[rows[0]]) if has_head else 0)
+        rows = np.flatnonzero(ep == e) # find all rows for this episode
+        rows = rows[np.argsort(step[rows])] # sort by step index
+        episodes.append(obj[rows]) # store the cube positions for this episode
+        heads.append(int(head[rows[0]]) if has_head else 0) # store the head index for this episode
         if not np.array_equal(step[rows], np.arange(len(rows))):
             bad_eps.append(int(e))
 
@@ -77,9 +77,9 @@ def load(path):
 def episode_stats(o):
     """Stats for one episode. o: (T, 3) cube positions in metres, in time order."""
     d = (o - o[0]) * 1000                              # displacement from spawn, mm
-    dist = np.linalg.norm(d[:, :2], axis=1)            # distance from spawn in the plane
-    path = np.linalg.norm(np.diff(d[:, :2], axis=0), axis=1).sum()
-    moved = np.flatnonzero(dist > CONTACT_MM)
+    dist = np.linalg.norm(d[:, :2], axis=1)            # norm of the distances from spawn in the xy plane, one per row so (T,)
+    path = np.linalg.norm(np.diff(d[:, :2], axis=0), axis=1).sum() # sum of the distances between consecutive steps in the xy plane, one value for the whole episode
+    moved = np.flatnonzero(dist > CONTACT_MM) # timesteps at which the cube is >2mm from spawn
 
     return {
         "steps": len(o),
@@ -92,33 +92,37 @@ def episode_stats(o):
         "max_abs_z_mm": np.abs(d[:, 2]).max(),
         "lift_mm": d[:, 2].max(),
         "path_mm": path,
-        "straightness": dist[-1] / path if path > 0 else 0.0,
-        "first_contact_step": int(moved[0]) if len(moved) > 0 else -1,
-        "push_angle_deg": np.degrees(np.arctan2(d[-1, 1], d[-1, 0])),
-        "contact": bool(dist.max() > CONTACT_MM),
-        "lifted": bool(d[:, 2].max() > LIFT_MM),
+        "straightness": dist[-1] / path if path > 0 else 0.0, # ratio of net displacement to path length, 1 = straight line
+        "first_contact_step": int(moved[0]) if len(moved) > 0 else -1, # first timestep at which the cube is >2mm from spawn, -1 if never
+        "push_angle_deg": np.degrees(np.arctan2(d[-1, 1], d[-1, 0])), # angle of the final displacement vector in degrees, relative to the x-axis
+        "contact": bool(dist.max() > CONTACT_MM), # whether the cube was ever >2mm from spawn
+        "lifted": bool(d[:, 2].max() > LIFT_MM), # whether the cube was ever lifted >5mm from spawn
     }
 
 
 def direction_entropy(angles_deg):
-    """0 = every push in the same direction, 1 = spread evenly over N_DIR_BINS sectors."""
-    if len(angles_deg) < 2:
+    """0 = every push in the same direction, 1 = spread evenly over N_DIR_BINS sectors.
+        angles_deg: array of angles in degrees, one per episode that has contact.
+        The angles are the final push direction of the cube, relative to the x-axis, in degrees.
+        N_DIR_BINS is the number of bins to use for the histogram, which is 16 by default.
+    """
+    if len(angles_deg) < 2: # not enough data to compute entropy
         return 0.0
-    counts, _ = np.histogram(angles_deg, bins=N_DIR_BINS, range=(-180, 180))
-    p = counts[counts > 0] / counts.sum()
-    return float(-(p * np.log(p)).sum() / np.log(N_DIR_BINS))
+    counts, _ = np.histogram(angles_deg, bins=N_DIR_BINS, range=(-180, 180)) # compute histogram of angles, counts is an array of length N_DIR_BINS
+    p = counts[counts > 0] / counts.sum() # probabilities of each bin, ignoring empty bins
+    return float(-(p * np.log(p)).sum() / np.log(N_DIR_BINS)) # entropy normalized to [0, 1], where 0 = all pushes in one direction, 1 = uniform distribution over N_DIR_BINS
 
 
 def describe(a):
     if len(a) == 0:
         return "n/a"
     return (f"mean {a.mean():6.1f}  median {np.median(a):6.1f}  "
-            f"p90 {np.percentile(a, 90):6.1f}  max {a.max():6.1f}")
+            f"p90 {np.percentile(a, 90):6.1f}  max {a.max():6.1f}") #p90 is the 90th percentile, meaning 90% of the data is below this value
 
 
 def displacements(data, dims):
     """Each episode's cube trajectory minus its spawn, first `dims` axes, in metres."""
-    return [o[:, :dims] - o[0, :dims] for o in data["episodes"]]
+    return [o[:, :dims] - o[0, :dims] for o in data["episodes"]] # returns a list of arrays, each array is the displacement of the cube from its spawn position for each episode, in the specified number of dimensions (2 or 3)
 
 
 # ---------------------------------------------------------------- report
