@@ -122,7 +122,8 @@ def sweep(net, arm, device, action_dim):
     head = torch.zeros(1, dtype=torch.long, device=device) #we only have one head, so this is always 0
     means, stds = [], []
     for _, cube in CUBE_POSITIONS:
-        x = torch.tensor(np.concatenate([arm, cube, [CUBE_Z]])[None],
+        rel = np.concatenate([cube, [CUBE_Z]]) - np.array(arm[:3], dtype=np.float32) #relative position of the cube to the arm
+        x = torch.tensor(np.concatenate([arm, cube, [CUBE_Z], rel])[None],
                          dtype=torch.float32, device=device) #builds a tensor of shape [1, state_dim] with the arm state, cube position, and cube height
         with torch.no_grad():
             # forward_select gives the raw distribution parameters (means, log_stds), pre tanh;
@@ -185,7 +186,8 @@ def main():
     # If sampled actions are far larger than the mean, behaviour is dominated
     # by exploration noise rather than by where the policy aims.
     head = torch.zeros(1, dtype=torch.long, device=device)
-    x = torch.tensor(np.concatenate([ARM_STATES[0][1], [0.5, 0.5], [CUBE_Z]])[None],
+    rel = np.array([0.5, 0.5, CUBE_Z]) - np.array(ARM_STATES[0][1][:3], dtype=np.float32)
+    x = torch.tensor(np.concatenate([ARM_STATES[0][1], [0.5, 0.5], [CUBE_Z], rel])[None],
                      dtype=torch.float32, device=device)
     print("\n=== mean against three samples (arm centred, cube centred) ===")
     with torch.no_grad():
