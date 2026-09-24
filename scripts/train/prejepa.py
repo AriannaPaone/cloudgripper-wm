@@ -136,6 +136,18 @@ def dinowm_forward(self, batch, stage, cfg):
         pred_embedding[..., :pixels_dim], target_embedding[..., :pixels_dim]
     )
 
+    batch['identity_loss'] = F.mse_loss(
+            batch['emb'][:, :-1, :pixels_dim],
+            batch['emb'][:, 1:, :pixels_dim].detach()
+        )
+
+    if stage == 'validate':
+        idl = F.mse_loss(batch['emb'][:, :-1, :pixels_dim],
+                         batch['emb'][:, 1:, :pixels_dim])
+        print(f"  identity baseline: {idl.item():.4f}  "
+              f"model: {batch['pixels_loss'].item():.4f}")
+    
+
     start, action_range = pixels_dim, [0, 0]
     for key in self.model.extra_encoders:
         dim = batch[f'{key}_emb'].size(-1)
@@ -172,6 +184,9 @@ def dinowm_forward(self, batch, stage, cfg):
         on_step=True,
         sync_dist=True,
     )
+
+    print("emb shape:", embedding.shape, "mean:", embedding.mean().item(), "std:", embedding.std().item())
+    print("pred:", pred_embedding.shape, "target:", target_embedding.shape)
     return batch
 
 
